@@ -1,0 +1,19 @@
+{
+  "name": "campus-is-glitching",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The Campus Is Glitching: a phone-sized hybrid campus wellness game for FLAME University (DESG310).",
+  "type": "module",
+  "scripts": {
+    "start": "node scripts/serve.mjs",
+    "test": "node --test tests/*.test.js",
+    "check": "node scripts/check.mjs",
+    "e2e": "node scripts/e2e.mjs"
+  },
+  "dependencies": {
+    "nodemailer": "^10.1.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
