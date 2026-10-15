@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#14130f">
+  <meta name="description" content="The Campus Is Glitching: a 15-minute campus wellness adventure for FLAME University.">
+  <title>The Campus Is Glitching</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;900&family=Alegreya+Sans:wght@400;500;700;800&family=Space+Grotesk:wght@500;700&display=swap">
+  <link rel="preload" as="image" href="assets/map/campus-map.jpg">
+  <link rel="stylesheet" href="src/styles/tokens.css">
+  <link rel="stylesheet" href="src/styles/base.css">
+  <link rel="stylesheet" href="src/styles/components.css">
+  <link rel="stylesheet" href="src/styles/screens.css">
+  <link rel="stylesheet" href="src/styles/map.css">
+  <link rel="stylesheet" href="src/styles/games.css">
+  <link rel="stylesheet" href="src/styles/features.css">
+</head>
+<body>
+  <!-- Decorative desktop backdrop. Contains no controls, navigation or data. -->
+  <div class="stage-bg" aria-hidden="true"></div>
+
+  <!-- The phone-sized game viewport (docs/05 section 13). The whole game lives here. -->
+  <main id="game-viewport" class="viewport" aria-label="The Campus Is Glitching">
+    <div id="app" class="app">
+      <div class="boot" role="status">
+        <div class="boot-map" aria-hidden="true">
+          <span class="boot-panel" style="--i:0"></span><span class="boot-panel" style="--i:1"></span><span class="boot-panel" style="--i:2"></span><span class="boot-panel" style="--i:3"></span>
+        </div>
+        <p>Unfolding the map…</p>
+      </div>
+    </div>
+    <div id="live" class="sr-only" aria-live="polite"></div>
+    <noscript><p class="noscript">This game needs JavaScript to run.</p></noscript>
+  </main>
+
+  <!-- Icon set: hand-drawn style line icons, 24px grid. -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+    <defs>
+      <symbol id="i-map" viewBox="0 0 24 24"><path d="M3 6.5 8.5 4l7 2.5L21 4v13.5L15.5 20l-7-2.5L3 20z"/><path d="M8.5 4v13.5M15.5 6.5V20"/></symbol>
+      <symbol id="i-scroll" viewBox="0 0 24 24"><path d="M6 4h11a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H7"/><path d="M6 4a2 2 0 0 0-2 2v1.5h4V6a2 2 0 0 0-2-2z"/><path d="M8 7.5V18a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-1.5h4"/><path d="M11 9h5M11 12h5M11 15h3"/></symbol>
+      <symbol id="i-satchel" viewBox="0 0 24 24"><path d="M5 9h14l-1 10.5a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 6 19.5z"/><path d="M9 9V6.5a3 3 0 0 1 6 0V9"/><path d="M5 9c2.5 3 11.5 3 14 0"/><path d="M12 12v2.5"/></symbol>
+      <symbol id="i-squad" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3.5 19c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5"/><circle cx="16.5" cy="9" r="2.4"/><path d="M15.5 14.2c2.4-.3 4.4 1.2 5 4.3"/></symbol>
+      <symbol id="i-hourglass" viewBox="0 0 24 24"><path d="M6 3h12M6 21h12"/><path d="M7 3c0 5 5 6 5 9s-5 4-5 9M17 3c0 5-5 6-5 9s5 4 5 9"/><path d="M9.5 18.5h5"/></symbol>
+      <symbol id="i-pause" viewBox="0 0 24 24"><path d="M9 6v12M15 6v12"/></symbol>
+      <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5v13l10-6.5z"/></symbol>
+      <symbol id="i-sound" viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path d="M15.5 9.5a3.5 3.5 0 0 1 0 5M18 7a7 7 0 0 1 0 10"/></symbol>
+      <symbol id="i-mute" viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path d="m16 10 4 4M20 10l-4 4"/></symbol>
+      <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+      <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+      <symbol id="i-fit" viewBox="0 0 24 24"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></symbol>
+      <symbol id="i-list" viewBox="0 0 24 24"><path d="M9 6.5h11M9 12h11M9 17.5h11"/><circle cx="5" cy="6.5" r="1"/><circle cx="5" cy="12" r="1"/><circle cx="5" cy="17.5" r="1"/></symbol>
+      <symbol id="i-key" viewBox="0 0 24 24"><path d="M5 4.5h9.5L19 9v10.5H5z"/><path d="M14.5 4.5V9H19"/><path d="M8 12.5h7M8 15.5h5"/></symbol>
+      <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+      <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+      <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></symbol>
+      <symbol id="i-next" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
+      <symbol id="i-steps" viewBox="0 0 24 24"><path d="M7.5 4.5c1.8 0 2.7 2 2.4 4.6-.2 1.9-1 3.4-2.5 3.4S5 11.2 5 9.2c0-2.6.8-4.7 2.5-4.7z"/><path d="M6 15.2h3.4c0 2.2-.6 3.8-1.8 3.8S6 17.7 6 15.2z"/><path d="M16.5 7.5c1.7 0 2.5 2 2.5 4.6 0 2-.9 3.4-2.4 3.4s-2.4-1.4-2.5-3.3c-.2-2.7.7-4.7 2.4-4.7z"/><path d="M15 17.8h3.4c0 2.3-.6 3.7-1.8 3.7S15 20.3 15 17.8z"/></symbol>
+      <symbol id="i-quill" viewBox="0 0 24 24"><path d="M20 3.5C13 4.5 8 9.5 6.5 16.5L5 21"/><path d="M20 3.5c-1 6.5-5.5 11.5-12.5 12.8"/><path d="M10 13.5c2-.4 4-1.6 5.5-3.5"/></symbol>
+      <symbol id="i-seal" viewBox="0 0 24 24"><path d="M12 2.8l2.1 1.6 2.6-.3.9 2.5 2.4 1.1-.4 2.6 1.6 2.1-1.6 2.1.4 2.6-2.4 1.1-.9 2.5-2.6-.3L12 21.2l-2.1-1.6-2.6.3-.9-2.5-2.4-1.1.4-2.6L2.8 12l1.6-2.1-.4-2.6 2.4-1.1.9-2.5 2.6.3z"/><path d="m8.5 12.2 2.4 2.4 4.6-4.8"/></symbol>
+      <symbol id="i-glitch" viewBox="0 0 24 24"><path d="M4 4.5h12v4H4z"/><path d="M8 10.5h12v3.5H8z"/><path d="M3 16h11v3.5H3z"/><path d="M17.5 17.8h3"/></symbol>
+      <symbol id="i-token" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="5.5"/><path d="M12 9v6M9.5 12h5"/></symbol>
+      <symbol id="i-compass" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m14.8 9.2-1.6 4-4 1.6 1.6-4z"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2"/></symbol>
+      <symbol id="i-restart" viewBox="0 0 24 24"><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4.5 4.5v4h4"/></symbol>
+      <symbol id="i-flag" viewBox="0 0 24 24"><path d="M6 21V4"/><path d="M6 4.5c4-2 7 2 12 0v8c-5 2-8-2-12 0"/></symbol>
+      <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4 8h3.5L9 5.5h6L16.5 8H20v11H4z"/><circle cx="12" cy="13.2" r="3.5"/></symbol>
+      <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21s-6.5-6.4-6.5-11.2a6.5 6.5 0 0 1 13 0C18.5 14.6 12 21 12 21z"/><circle cx="12" cy="9.8" r="2.3"/></symbol>
+      <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></symbol>
+      <symbol id="i-leaf" viewBox="0 0 24 24"><path d="M5 19c0-8 5-13.5 14-14-0.5 9-6 14-14 14z"/><path d="M5 19 13 11"/></symbol>
+      <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/><path d="M12 14.5v2.5"/></symbol>
+      <symbol id="i-wrench" viewBox="0 0 24 24"><path d="M14.5 5.5a4.5 4.5 0 0 0-5.8 5.8L4 16a2.1 2.1 0 0 0 3 3l4.7-4.7a4.5 4.5 0 0 0 5.8-5.8l-2.7 2.7-2.6-.4-.4-2.6z"/></symbol>
+      <symbol id="i-star" viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8L3.5 9.7l5.9-.8z"/></symbol>
+      <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 3 5 13.5h6L10 21l8-10.5h-6z"/></symbol>
+      <symbol id="i-flame" viewBox="0 0 24 24"><path d="M12 21c-4 0-6.5-2.7-6.5-6.2 0-3.4 2.6-5.3 3.6-8.3 1.3 1.6 1.4 3.3 1.2 4.5C12 9.5 13 6.5 12.4 3c3.5 2.2 6.1 6.2 6.1 11.4C18.5 18.3 16 21 12 21z"/></symbol>
+      <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8"/></symbol>
+      <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="3.8"/><path d="M4.5 20c.8-4 3.8-6.2 7.5-6.2s6.7 2.2 7.5 6.2"/></symbol>
+      <symbol id="i-signal" viewBox="0 0 24 24"><path d="M12 13v8"/><path d="M8.5 9.5a5 5 0 0 1 7 0M6 7a8.5 8.5 0 0 1 12 0"/><circle cx="12" cy="12.5" r="1"/></symbol>
+    </defs>
+  </svg>
+
+  <script type="module" src="src/js/main.js?v=20261011-quest-journal-location"></script>
+</body>
+</html>
