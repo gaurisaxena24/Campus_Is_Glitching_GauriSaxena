@@ -100,7 +100,8 @@ export function introScreen({ step, mode, profile }) {
       actions = `<button class="btn btn--ghost-dark" data-action="intro-prev" aria-label="Back">${icon('back')}</button><button class="btn btn--acid btn--xl" data-action="intro-begin">${icon('play')} Begin</button>`;
     }
   }
-  return `<section class="intro screen-enter">${top}<div class="intro-body intro-body--step-${step} step-enter">${body}</div><div class="intro-actions">${actions}</div></section>`;
+  const replayReady = mode === 'replay' && step === INTRO_LAST;
+  return `<section class="intro${replayReady ? ' intro--replay-ready' : ''} screen-enter">${top}<div class="intro-body intro-body--step-${step} step-enter">${body}</div><div class="intro-actions">${actions}</div></section>`;
 }
 
 // ---------- Summary / victory ----------
