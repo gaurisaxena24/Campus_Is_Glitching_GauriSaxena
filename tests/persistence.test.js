@@ -18,7 +18,7 @@ function repairedOnce() {
   let s = reduce(createInitialState(), { type: 'START_SESSION', now: T0 });
   s = reduce(s, { type: 'ACTIVATE', id: fc, now: T0 + 1 });
   s = reduce(s, { type: 'COMPLETE_PHYSICAL', method: 'self', id: fc, now: T0 + 2 });
-  s = reduce(s, { type: 'SUBMIT_DIGITAL', id: fc, result: { hits: 8 }, now: T0 + 3 });
+  s = reduce(s, { type: 'SUBMIT_DIGITAL', id: fc, result: { melted: 100 }, now: T0 + 3 });
   return reduce(s, { type: 'REPAIR', id: fc, now: T0 + 4 });
 }
 
@@ -33,7 +33,7 @@ test('a ready-to-repair mission survives reload without being repaired', () => {
   let s = reduce(createInitialState(), { type: 'START_SESSION', now: T0 });
   s = reduce(s, { type: 'ACTIVATE', id: fc, now: T0 + 1 });
   s = reduce(s, { type: 'COMPLETE_PHYSICAL', method: 'self', id: fc, now: T0 + 2 });
-  s = reduce(s, { type: 'SUBMIT_DIGITAL', id: fc, result: { hits: 8 }, now: T0 + 3 });
+  s = reduce(s, { type: 'SUBMIT_DIGITAL', id: fc, result: { melted: 100 }, now: T0 + 3 });
   const back = deserialize(serialize(s));
   assert.equal(back.missions[fc].status, 'ACTIVE');
   assert.equal(tokenCount(back), 0);
@@ -43,7 +43,7 @@ test('corrupted or inconsistent saves are rejected (T-PER-05)', () => {
   assert.equal(deserialize('{not json'), null);
   assert.equal(deserialize(JSON.stringify({ version: 1 })), null);
   const s = JSON.parse(serialize(repairedOnce()));
-  s.missions['lost-colour'].status = 'REPAIRED';
+  s.missions[fc].status = 'NOT_A_STATE';
   assert.equal(deserialize(JSON.stringify(s)), null);
   const t = JSON.parse(serialize(repairedOnce()));
   t.missions[fc].result = null; // digital done without a result

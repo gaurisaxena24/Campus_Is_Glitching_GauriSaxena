@@ -162,7 +162,7 @@ function focusGame(el, opts) {
   return { destroy: clear };
 }
 
-// ---------------- THAW: the ice character follows a real pointer drag ----------------
+// ---------------- THAW: the ice character follows the pointer and paints a trail ----------------
 function thawGame(el, opts) {
   const ui = shell(el, 'thaw', 'THAW');
   let active = false;
@@ -190,21 +190,22 @@ function thawGame(el, opts) {
     active = false; completed = false; live = null;
     ui.stage.innerHTML = surface(true);
     ui.meter.innerHTML = ring(0, '100%');
-    introFoot(ui.foot, 'Drag the ice. Watch it melt.', start, opts.squad ? 'Take turns guiding the ice character.' : '');
+    introFoot(ui.foot, 'Drag the ice or glide your cursor to paint a dotted melting trail.', start, opts.squad ? 'Take turns guiding the ice character.' : '');
   }
 
   function start() {
     active = true; completed = false;
     opts.play('start');
     ui.stage.innerHTML = surface();
-    ui.foot.innerHTML = `<p class="game-line">Drag the ice. Watch it melt.</p><div class="btn-row"><button class="btn btn--ghost-dark" data-thaw-restart>${icon('restart')} Restart</button></div>`;
+    ui.foot.innerHTML = `<p class="game-line">Drag the ice or glide your cursor. Watch the dotted trail thaw it.</p><div class="btn-row"><button class="btn btn--ghost-dark" data-thaw-restart>${icon('restart')} Restart</button></div>`;
     const board = ui.stage.querySelector('.thaw-board');
     const trail = ui.stage.querySelector('.thaw-trail');
     const ice = ui.stage.querySelector('.thaw-ice');
     const puddle = ui.stage.querySelector('.thaw-puddle');
     const rect = board.getBoundingClientRect();
     let position = { x: rect.width / 2, y: rect.height / 2 };
-    let lastPoint = null;
+    let lastPoint = position;
+    let touchPointer = null;
     let dotCarry = 0;
     let travelled = 0;
     const dotGap = 8;
@@ -216,8 +217,8 @@ function thawGame(el, opts) {
       remaining = Math.max(0, 1 - travelled / goalDistance);
       const melted = 1 - remaining;
       ui.meter.innerHTML = ring(melted, `${Math.round(remaining * 100)}%`);
-      ice.style.setProperty('--ice-scale', String(0.2 + remaining * 0.8));
-      ice.style.setProperty('--ice-opacity', String(0.38 + remaining * 0.62));
+      ice.style.setProperty('--ice-scale', String(0.42 + remaining * 0.58));
+      ice.style.setProperty('--ice-opacity', String(0.78 + remaining * 0.22));
       ice.style.setProperty('--crack-opacity', String(Math.min(1, Math.max(0, (melted - .12) * 1.35))));
       ice.style.left = `${position.x}px`; ice.style.top = `${position.y}px`;
       puddle.style.left = `${position.x}px`; puddle.style.top = `${position.y + 27 * (0.2 + remaining * 0.8)}px`;
@@ -227,7 +228,7 @@ function thawGame(el, opts) {
     };
     const pointFrom = (event) => {
       const b = board.getBoundingClientRect();
-      const half = Math.max(ice.offsetWidth * (0.2 + remaining * 0.8) / 2, 7);
+      const half = Math.max(ice.offsetWidth * (0.42 + remaining * 0.58) / 2, 7);
       return {
         x: Math.max(half, Math.min(b.width - half, event.clientX - b.left)),
         y: Math.max(half, Math.min(b.height - half, event.clientY - b.top)),
@@ -244,30 +245,36 @@ function thawGame(el, opts) {
         const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
         dot.setAttribute('cx', String(x / rect.width * 1000));
         dot.setAttribute('cy', String(y / rect.height * 800));
-        dot.setAttribute('r', String(Math.max(2, 2.5 * 1000 / rect.width)));
+        dot.setAttribute('r', String(Math.max(4, 4 * 1000 / rect.width)));
         trail.appendChild(dot);
         along += dotGap;
       }
       dotCarry = (dotCarry + length) % dotGap;
       travelled += length;
     };
-    ice.addEventListener('pointerdown', (event) => {
-      if (!active || completed) return;
+    board.addEventListener('pointerdown', (event) => {
+      if (!active || completed || event.pointerType !== 'touch') return;
       event.preventDefault();
-      const point = pointFrom(event);
-      position = point; lastPoint = point; ice.classList.add('is-dragging');
-      ice.setPointerCapture(event.pointerId); paint();
+      touchPointer = event.pointerId;
+      board.setPointerCapture(event.pointerId);
+      ice.classList.add('is-dragging');
     });
-    ice.addEventListener('pointermove', (event) => {
-      if (!lastPoint || !active || completed) return;
+    board.addEventListener('pointermove', (event) => {
+      if (!active || completed) return;
+      if (event.pointerType === 'touch' && event.pointerId !== touchPointer) return;
       event.preventDefault();
       const point = pointFrom(event);
       addDots(lastPoint, point);
       lastPoint = point; position = point; paint();
     });
-    const release = () => { lastPoint = null; ice.classList.remove('is-dragging'); };
-    ice.addEventListener('pointerup', release);
-    ice.addEventListener('pointercancel', release);
+    const release = (event) => {
+      if (event && touchPointer !== event.pointerId) return;
+      if (touchPointer != null && board.hasPointerCapture(touchPointer)) board.releasePointerCapture(touchPointer);
+      touchPointer = null;
+      ice.classList.remove('is-dragging');
+    };
+    board.addEventListener('pointerup', release);
+    board.addEventListener('pointercancel', release);
     paint();
 
     function finish() {
@@ -278,7 +285,7 @@ function thawGame(el, opts) {
         <button class="btn btn--ghost-dark" data-thaw-restart>${icon('restart')} Restart</button>
         <button class="btn btn--acid" data-thaw-continue>Continue ${icon('next','icon--sm')}</button></div>`;
       ui.foot.querySelector('[data-thaw-restart]').addEventListener('click', () => { restarts += 1; start(); });
-      ui.foot.querySelector('[data-thaw-continue]').addEventListener('click', () => opts.onWin({ melted: 100, perfect: restarts === 0 }), { once: true });
+      ui.foot.querySelector('[data-thaw-continue]').addEventListener('click', () => opts.onWin({ melted: 100, perfect: restarts === 0, restarts, score: Math.max(0, 1000 - restarts * 100) }), { once: true });
       ui.foot.querySelector('[data-thaw-continue]').focus({ preventScroll: true });
     }
   }
@@ -334,23 +341,35 @@ function socialGame(el, opts) {
 
 // ---------------- Sequence: watch slowly, then repeat (rushing resets) ----------------
 function sequenceGame(el, opts) {
-  const ui = shell(el, 'sequence', 'Slow lane');
+  const ui = shell(el, 'sequence', 'Colour echo');
   let timers = [];
+  let round = 0;
+  let perfectRun = true;
+  let score = 0;
+  let totalMistakes = 0;
+  let totalRushes = 0;
   const clear = () => { timers.forEach(clearTimeout); timers = []; };
   function intro() {
     clear();
+    round = 0; perfectRun = true; score = 0; totalMistakes = 0; totalRushes = 0;
     ui.stage.innerHTML = `<div class="seq-art">${glitchArt('palette')}</div>`;
-    ui.meter.innerHTML = ring(0, `0/${SEQUENCE.length}`);
-    introFoot(ui.foot, 'Watch the colours return one by one. Tap too early and they slip away.', start, opts.squad ? 'One watches and calls out, the other taps.' : '');
+    ui.meter.innerHTML = '';
+    introFoot(ui.foot, 'Watch the colour flashes, then tap them back in order.', start, opts.squad ? 'One watches and calls out, the other taps.' : '');
   }
   function start() {
+    round = 0; perfectRun = true; score = 0; totalMistakes = 0; totalRushes = 0;
+    playRound();
+  }
+  function playRound() {
     opts.play('start');
-    const seq = makeSequence();
+    const length = 3 + round;
+    const seq = makeSequence(Math.random, length);
     let input = [];
     let rushes = 0;
     let wrongs = 0;
     let watching = false;
     ui.stage.innerHTML = `<div class="seq-wrap" data-seq="${seq.join(',')}">
+      <div class="seq-progress" aria-live="polite"><span>R${round + 1} · 0/${length}</span><i><b style="--seq-progress:0%"></b></i></div>
       <div class="seq-orb" aria-live="polite"><span class="seq-label">Watch</span></div>
       <div class="seq-trail">${seq.map(() => '<i></i>').join('')}</div>
       <div class="seq-swatches">${PALETTE.map((c) => `<button class="swatch" data-colour="${c.id}" style="--c:${c.hex}" aria-label="${c.name}"><span>${c.name}</span></button>`).join('')}</div>
@@ -358,7 +377,11 @@ function sequenceGame(el, opts) {
     const orb = ui.stage.querySelector('.seq-orb');
     const label = ui.stage.querySelector('.seq-label');
     const trail = [...ui.stage.querySelectorAll('.seq-trail i')];
-    const meter = () => { ui.meter.innerHTML = ring(input.length / seq.length, `${input.length}/${seq.length}`); };
+    const meter = () => {
+      const progress = ui.stage.querySelector('.seq-progress');
+      progress.querySelector('span').textContent = `R${round + 1} · ${input.length}/${seq.length}`;
+      progress.querySelector('b').style.setProperty('--seq-progress', `${input.length / seq.length * 100}%`);
+    };
 
     const reveal = () => {
       clear();
@@ -401,6 +424,7 @@ function sequenceGame(el, opts) {
       const r = checkSequence(input, seq);
     if (r === 'wrong') {
         wrongs += 1;
+        perfectRun = false;
         opts.play('miss');
         flashWrong(b);
         flashWrong(orb);
@@ -413,12 +437,20 @@ function sequenceGame(el, opts) {
       meter();
       if (r === 'done') {
         clear();
+        totalMistakes += wrongs;
+        totalRushes += rushes;
+        score += Math.max(0, length * 25 - wrongs * 15 - rushes * 10);
         ui.stage.querySelector('.seq-wrap').classList.add('restored');
         label.textContent = 'Restored';
         opts.play('win');
         burstFrom(orb, { colours: PALETTE.map((p) => p.hex) });
-        const perfect = rushes === 0 && wrongs === 0;
-        wonFoot(ui.foot, perfect ? 'Restored, without rushing once.' : 'Colour restored.', () => opts.onWin({ correct: true, perfect }), start);
+        if (rushes || wrongs) perfectRun = false;
+        if (round < 2) {
+          ui.foot.innerHTML = `<p class="game-won">Round ${round + 1} cleared! The next sequence gets trickier.</p><button class="btn btn--acid btn--block" data-seq-next>Next round ${icon('next', 'icon--sm')}</button>`;
+          ui.foot.querySelector('[data-seq-next]').addEventListener('click', () => { round += 1; playRound(); }, { once: true });
+        } else {
+          wonFoot(ui.foot, perfectRun ? 'All three rounds! Colour restored.' : 'All three rounds cleared! Colour restored.', () => opts.onWin({ correct: true, perfect: perfectRun, score, rounds: 3, mistakes: totalMistakes, rushes: totalRushes }), start);
+        }
       }
     }));
     reveal();

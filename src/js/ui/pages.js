@@ -8,7 +8,7 @@ import {
   MISSION, SESSION, MAX_TOKENS, TOKENS_PER_REPAIR, episodeResult,
 } from '../game/state.js';
 import {
-  levelOf, levelProgress, XP_PER_LEVEL, BADGES, AVATARS, TEAMMATES, SQUAD_COLOURS, streak, dailyFor, dailyDone, squadActive, XP,
+  levelOf, levelProgress, XP_PER_LEVEL, BADGES, GAME_RECORDS, completedGlitchCount, AVATARS, TEAMMATES, SQUAD_COLOURS, streak, dailyFor, dailyDone, squadActive, XP,
 } from '../game/profile.js';
 import { esc, icon } from './dom.js';
 import { STATE_LABEL, STATE_ICON } from './pins.js';
@@ -23,17 +23,60 @@ const back = (label = 'Back') => `<button class="back-btn" data-action="back">${
 const ring = (pct, inner, cls = '') => `<span class="ring ${cls}" style="--p:${Math.round(pct * 100)}"><b>${inner}</b></span>`;
 const localChip = '<span class="local-chip" title="Local play on this device. Nothing is shared or synced.">' + icon('squad', 'icon--xs') + 'Local</span>';
 
+function multiplayerPanel(ctx) {
+  const room = ctx.multiplayerRoom;
+  if (!room) return `<section class="panel multiplayer-panel">
+    <div class="multiplayer-heading"><div><p class="eyebrow eyebrow--acid">Live co-op</p><h2>Bring a friend</h2></div>${icon('squad', 'icon--lg')}</div>
+    <p class="hint">Create a two-player room or join with your friend’s code.</p>
+    <div class="multiplayer-actions"><label class="field"><span class="label">Your call sign</span><input class="input input--dark" data-room-name maxlength="24" value="${esc(ctx.multiplayerDraftName ?? ctx.profile.fieldName ?? '')}" placeholder="Name your friend will recognise"></label><button class="btn btn--acid" data-action="room-create">Create room</button><label class="field"><span class="label">Room code</span><input class="input input--dark" data-room-code maxlength="6" value="${esc(ctx.multiplayerInviteCode || '')}" autocapitalize="characters" placeholder="6-character code"></label><button class="btn btn--ghost-dark" data-action="room-join">Join room</button></div>
+    ${ctx.multiplayerError ? `<p class="error" role="alert">${esc(ctx.multiplayerError)}</p>` : ''}
+    <small>Your quests and XP stay saved on your device; room activity syncs live.</small>
+  </section>`;
+  const players = room.players || [];
+  const others = players.map((p) => {
+    const contributions = Object.values(p.activities || {}).reduce((total, activity) => total + Object.values(activity).filter(Boolean).length, 0);
+    return `<div class="multiplayer-player"><span class="multiplayer-avatar">${icon('user')}</span><div><strong>${esc(p.name)}${p.id === ctx.multiplayerPlayerId ? ' · You' : ''}</strong><small>Lv ${p.level} · ${p.xp} XP · ${contributions} contributions · ${p.ready ? 'Ready' : 'Not ready'}</small></div><i class="presence-dot${Date.now() - p.lastSeen < 12_000 ? ' is-online' : ''}" title="${Date.now() - p.lastSeen < 12_000 ? 'Online' : 'Offline'}"></i></div>`;
+  }).join('');
+  const activityLabels = [['frozen-character','Frozen Character'],['lost-colour','Lost Colour'],['missing-connection','Lost Connection']];
+  const tasks = activityLabels.map(([id, name]) => {
+    const status = room.activities?.[id] || {};
+    const contributors = players.map((p) => `<span>${esc(p.name)} ${p.activities?.[id]?.physical ? 'P✓' : 'P○'} ${p.activities?.[id]?.digital ? 'D✓' : 'D○'} ${p.activities?.[id]?.repaired ? 'Fix✓' : 'Fix○'}</span>`).join('');
+    return `<div class="multiplayer-task"><strong>${name}</strong><span>${status.physical ? '✓' : '○'} Physical</span><span>${status.digital ? '✓' : '○'} Digital</span><span>${status.repaired ? '✓' : '○'} Team fix</span><div class="multiplayer-contributors">${contributors}</div></div>`;
+  }).join('');
+  const games = [['sequence','Colour Click + Pattern'],['episode','Missing-Word Conversation']];
+  const scoreRows = games.map(([key, title]) => {
+    const bestRuns = players.map((p) => ({ player: p, run: [...(p.scores?.[key]?.runs || [])].sort((a, b) => b.score - a.score)[0] }));
+    const bothPlayed = bestRuns.length === 2 && bestRuns.every((entry) => entry.run);
+    const highScore = bothPlayed ? Math.max(...bestRuns.map((entry) => entry.run.score)) : null;
+    const leader = highScore == null ? '' : bestRuns.filter((entry) => entry.run.score === highScore).map((entry) => entry.player.name).join(' + ');
+    return `<div class="multiplayer-score"><strong>${title}</strong><div class="multiplayer-score-players">${bestRuns.map(({ player: p, run: bestRun }) => {
+    const time = bestRun?.elapsedMs == null ? '' : ` · ${(bestRun.elapsedMs / 1000).toFixed(1)}s`;
+    return `<span>${esc(p.name)} ${bestRun ? `${bestRun.score} pts · ${bestRun.accuracy}%${time}` : '—'}</span>`;
+    }).join('')}${leader ? `<small class="multiplayer-leader">${esc(leader)} ${bestRuns.filter((entry) => entry.run.score === highScore).length > 1 ? 'tied' : 'leads'}</small>` : '<small>Play a run to start the room duel</small>'}</div></div>`;
+  }).join('');
+  return `<section class="panel multiplayer-panel multiplayer-panel--room">
+    <div class="multiplayer-heading"><div><p class="eyebrow eyebrow--acid">Live room · ${esc(room.code)}</p><h2>Two-player link</h2></div><button class="btn btn--ghost-dark btn--sm" data-action="room-copy">Copy code</button></div>
+    <div class="multiplayer-players">${others}${players.length < 2 ? '<div class="multiplayer-player multiplayer-waiting"><span class="multiplayer-avatar">+</span><div><strong>Waiting for friend</strong><small>Share the room code above</small></div></div>' : ''}</div>
+    <div class="multiplayer-actions"><button class="btn btn--acid" data-action="room-ready" data-ready="${players.find((p) => p.id === ctx.multiplayerPlayerId)?.ready ? 'false' : 'true'}">${players.find((p) => p.id === ctx.multiplayerPlayerId)?.ready ? 'Ready ✓' : 'I’m ready'}</button><span class="multiplayer-reconnect">Room reconnects automatically if you go offline.</span></div>
+    <h3 class="section-title">Campus team progress</h3><div class="multiplayer-tasks">${tasks}</div>
+    <h3 class="section-title">Room bests</h3><div class="multiplayer-scores">${scoreRows}</div>
+    <small>Activity reports are tied to your room token. Physical tasks are self-confirmed.</small>
+    ${ctx.multiplayerError ? `<p class="error" role="alert">${esc(ctx.multiplayerError)}</p>` : ''}
+  </section>`;
+}
+
 function stepCard(kind, m, mission, squad, enabled) {
   const done = kind === 'physical' ? m.physicalComplete : m.digitalComplete;
   const part = mission[kind];
   const title = part.title;
   const line = squad ? part.squad : part.line;
-  return `<button class="step-card step-card--${kind}${done ? ' done' : ''}" data-action="${kind === 'physical' ? 'open-physical' : 'open-digital'}" data-id="${mission.id}" ${enabled && !done ? '' : 'aria-disabled="true"'}>
+  const replayable = kind === 'digital' && done && enabled;
+  return `<button class="step-card step-card--${kind}${done ? ' done' : ''}" data-action="${kind === 'physical' ? 'open-physical' : 'open-digital'}" data-id="${mission.id}" ${enabled && (!done || replayable) ? '' : 'aria-disabled="true"'}>
     <span class="step-tag">${kind === 'physical' ? 'Physical' : 'Digital'}</span>
     <span class="step-icon">${icon(done ? 'check' : kind === 'physical' ? 'steps' : 'bolt')}</span>
     <strong>${esc(title)}</strong>
     <small>${esc(line)}</small>
-    <span class="step-cta">${done ? 'Done' : enabled ? (kind === 'physical' ? 'Start' : 'Play') : 'Locked'}</span>
+    <span class="step-cta">${done ? (replayable ? 'Replay' : 'Done') : enabled ? (kind === 'physical' ? 'Start' : 'Play') : 'Locked'}</span>
     ${done && kind === 'physical' ? `<span class="step-method">${esc(methodLabel(m))}</span>` : ''}
   </button>`;
 }
@@ -133,7 +176,7 @@ export function physicalPage(ctx, id) {
   } else if (p.kind === 'consent') {
     body = `<div class="phys-art">${glitchArt('bubbles')}</div>
       <label class="check check--dark"><input type="checkbox" data-consent="${id}" ${draft.consent ? 'checked' : ''}><span>${esc(p.consent)}</span></label>
-      <button class="btn btn--acid btn--xl btn--block" data-action="complete-physical" data-id="${id}" ${draft.consent ? '' : 'aria-disabled="true"'}>${icon('check')} We chatted</button>`;
+      <button class="btn btn--acid btn--xl btn--block" data-action="complete-physical" data-id="${id}" ${draft.consent ? '' : 'aria-disabled="true"'}>${icon('check')} I had the conversation</button>`;
   } else if (p.kind === 'counter') {
     const n = draft.counted || 0;
     const colours = ['#c0583a', '#e0a83a', '#6f9a3c', '#5fa8c8', '#8a5a9e'];
@@ -241,7 +284,7 @@ export function questsPage(ctx) {
     </button><button class="quest-locate" data-action="locate-mission" data-id="${mi.id}" aria-label="Locate ${esc(mi.name)} at ${esc(dest.label)} on map" title="Locate on map">${icon('map')}<span>Locate</span></button></div>`;
   }).join('');
   return `<div class="page-inner">
-    <div class="page-head page-head--row"><div><p class="eyebrow eyebrow--acid">Quests</p><h1 tabindex="-1">Glitches</h1></div>${ring(n / MISSIONS.length, `${n}/5`, 'ring--md')}</div>
+    <div class="page-head page-head--row"><div><p class="eyebrow eyebrow--acid">Quests</p><h1 tabindex="-1">Glitches</h1></div>${ring(n / MISSIONS.length, `${n}/${MISSIONS.length}`, 'ring--md')}</div>
     ${questViewTabs('quests')}
     <div class="quest-list">${cards}</div>
   </div>`;
@@ -256,18 +299,30 @@ export function inventoryPage(ctx) {
   const st = streak(profile, today);
   const daily = dailyFor(today);
   const done = dailyDone(profile, today);
+  const gameRecords = Object.entries(GAME_RECORDS).map(([game, meta]) => {
+    const record = profile.gameRecords[game];
+    const best = record ? record.best : null;
+    const last = record && record.runs.length ? record.runs[record.runs.length - 1] : null;
+    return `<article class="local-record"><div><strong>${esc(meta.title)}</strong><small>${last == null ? 'No run saved yet' : `Last ${last} · Personal best ${best}`}</small></div><span class="local-record-score">${best == null ? '—' : best}</span><small class="local-record-challenge">${best == null ? 'Set your first record' : `Next run · beat ${best}`}</small></article>`;
+  }).join('');
   const slots = Array.from({ length: MAX_TOKENS }, (_, i) => {
     const filled = i < tokens;
     const isNew = filled && i >= tokens - fresh;
     return `<span class="token${filled ? ' on' : ''}${isNew ? ' new' : ''}" style="${isNew ? `animation-delay:${(i - (tokens - fresh)) * 150}ms` : ''}">${icon('token')}</span>`;
   }).join('');
-  return `<div class="page-inner">
+  return `<div class="page-inner page-inner--inventory">
     <div class="page-head"><p class="eyebrow eyebrow--acid">Inventory</p><h1 tabindex="-1">Rewards</h1></div>
     <div class="xp-card">
       ${ring(levelProgress(profile.xp), `Lv ${lvl}`, 'ring--lg ring--acid')}
-      <div><strong class="xp-num">${profile.xp} XP</strong><small>${XP_PER_LEVEL - (profile.xp % XP_PER_LEVEL)} XP to level ${lvl + 1}</small></div>
+      <div><strong class="xp-num">${profile.xp} XP</strong><small>${XP_PER_LEVEL - (profile.xp % XP_PER_LEVEL)} XP to level ${lvl + 1}</small><span class="xp-level-track" role="img" aria-label="${Math.round(levelProgress(profile.xp) * 100)} percent to level ${lvl + 1}"><i style="width:${levelProgress(profile.xp) * 100}%"></i></span></div>
       <div class="streak${st ? ' on' : ''}" title="Days in a row you've played on this device">${icon('flame')}<b>${st}</b><small>day streak</small></div>
     </div>
+    <section class="panel local-scoreboard">
+      <h2 class="section-title">Personal leaderboard <span>LOCAL</span></h2>
+      <div class="local-score-stats"><div><strong>${profile.xp}</strong><small>Total XP</small></div><div><strong>${completedGlitchCount(profile)}</strong><small>Glitches repaired</small></div></div>
+      <p class="hint">You vs your saved runs · Set a score, then beat it.</p>
+      <div class="local-record-list">${gameRecords}</div>
+    </section>
     <section class="panel">
       <h2 class="section-title">Repair tokens <span>${tokens}/${MAX_TOKENS}</span></h2>
       <div class="tokens" aria-label="${tokens} of ${MAX_TOKENS} repair tokens">${slots}</div>
@@ -276,11 +331,11 @@ export function inventoryPage(ctx) {
     <section class="panel daily${done ? ' is-done' : ''}">
       <h2 class="section-title">${icon('star', 'icon--sm')} Daily challenge</h2>
       <div class="daily-row"><div><strong>${esc(daily.title)}</strong><small>${esc(daily.line)}</small></div>
-      ${done ? `<span class="done-badge">${icon('check')} Done</span>` : `<button class="btn btn--acid" data-action="daily-done">+${XP.daily} XP</button>`}</div>
+      ${done ? `<span class="done-badge daily-xp-earned">${icon('check')} +${XP.daily} XP earned</span>` : `<button class="btn btn--acid" data-action="daily-done">Claim +${XP.daily} XP</button>`}</div>
     </section>
     <section class="panel">
       <h2 class="section-title">Badges <span>${Object.keys(profile.badges).length}/${BADGES.length}</span></h2>
-      <div class="badges">${BADGES.map((b) => `<div class="badge-tile${profile.badges[b.id] ? ' on' : ''}${b.id === 'first-repair' ? ' badge-tile--first-fix' : ''}" title="${esc(b.desc)}"><span>${icon(profile.badges[b.id] ? b.icon : 'lock')}</span>${b.id === 'first-repair' ? `<div class="badge-tile-copy"><strong>${esc(b.name)}</strong><small>${esc(b.desc)}</small></div>` : `<strong>${esc(b.name)}</strong><small>${esc(b.desc)}</small>`}</div>`).join('')}</div>
+      <div class="badges">${BADGES.map((b) => `<div class="badge-tile${profile.badges[b.id] ? ' on' : ''}" title="${esc(b.desc)}"><span>${icon(profile.badges[b.id] ? b.icon : 'lock')}</span><div class="badge-tile-copy"><strong>${esc(b.name)}</strong><small>${esc(b.desc)}</small></div></div>`).join('')}</div>
     </section>
   </div>`;
 }
@@ -343,7 +398,8 @@ export function squadPage(ctx) {
         <p class="error" data-squad-error role="alert"></p>
         <div class="btn-row${sq.name ? '' : ' btn-row--stack'}">${sq.name ? '<button type="button" class="btn btn--ghost-dark" data-action="squad-cancel">Cancel</button>' : ''}<button type="submit" class="btn btn--acid">${icon('squad')} ${sq.name ? 'Save squad' : 'Create squad'}</button></div>
       </form>
-      <p class="hint hint--center">Your invitations are sent by email. Task progress is coordinated in person and is not synced between devices.</p>
+      ${multiplayerPanel(ctx)}
+      <p class="hint hint--center">${ctx.multiplayerRoom ? 'Room activity syncs live; personal quest saves stay on this device.' : 'Email invitations are for meeting up; live cross-device play uses a room code below.'}</p>
     </div>`;
   }
   const active = squadActive(profile);
@@ -354,6 +410,7 @@ export function squadPage(ctx) {
       <span class="squad-crest">${icon('squad', 'icon--lg')}</span>
       <div><p class="eyebrow">Squad ${localChip}</p><h1 tabindex="-1">${esc(sq.name)}</h1><small>${addresses.length} invited player${addresses.length === 1 ? '' : 's'}</small></div>
     </div>
+    ${multiplayerPanel(ctx)}
     <div class="segmented" role="radiogroup" aria-label="Play mode">
       <button role="radio" aria-checked="${!active}" data-action="mode" data-mode="solo">${icon('user')} Solo</button>
       <button role="radio" aria-checked="${active}" data-action="mode" data-mode="squad">${icon('squad')} Squad</button>

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   createProfile, award, levelOf, streak, recordDay, unlockBadge, completeDaily, dailyFor, dailyDone,
-  setSquad, squadActive, sanitizeProfile, XP_PER_LEVEL,
+  setSquad, squadActive, sanitizeProfile, recordGameScore, completedGlitchCount, XP_PER_LEVEL,
 } from '../src/js/game/profile.js';
 
 test('XP is awarded once per key, even when repeated (no duplicate rewards)', () => {
@@ -47,6 +47,30 @@ test('badges unlock once and only if they exist', () => {
   r = unlockBadge(r.profile, 'first-repair', '2026-10-11');
   assert.equal(r.unlocked, false);
   assert.equal(unlockBadge(createProfile(), 'made-up', 'x').unlocked, false);
+});
+
+test('digital personal bests save real runs, keep the high score and reject invalid scores', () => {
+  let p = createProfile();
+  let r = recordGameScore(p, 'sequence', 250);
+  assert.equal(r.newBest, true);
+  assert.equal(r.previousBest, null);
+  p = r.profile;
+  r = recordGameScore(p, 'sequence', 210);
+  assert.equal(r.newBest, false);
+  p = r.profile;
+  r = recordGameScore(p, 'sequence', 280);
+  assert.equal(r.newBest, true);
+  assert.deepEqual(r.profile.gameRecords.sequence, { best: 280, runs: [250, 210, 280] });
+  assert.equal(recordGameScore(p, 'sequence', 301).profile, p);
+  assert.equal(recordGameScore(p, 'fake-game', 10).profile, p);
+  const saved = sanitizeProfile(JSON.parse(JSON.stringify(r.profile)));
+  assert.deepEqual(saved.gameRecords.sequence, r.profile.gameRecords.sequence);
+});
+
+test('local repaired-glitch count comes from the idempotent repair award ledger', () => {
+  const p = award(createProfile(), 'run:100:frozen-character:repair', 50, '2026-10-15').profile;
+  const p2 = award(p, 'run:200:lost-colour:repair', 50, '2026-10-15').profile;
+  assert.equal(completedGlitchCount(p2), 2);
 });
 
 test('daily challenge rotates by date and pays once per day', () => {

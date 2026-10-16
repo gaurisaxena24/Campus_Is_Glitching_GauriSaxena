@@ -2,14 +2,14 @@
 // dispatches actions through the pure reducers, persists, renders and
 // handles every interaction, reward and effect.
 
-import { MISSIONS, getMission, missionAtDestination, SQUAD_RALLY } from './data/missions.js';
+import { MISSIONS, getMission, missionAtDestination, validateMinigameResult, SQUAD_RALLY } from './data/missions.js';
 import { getDestination } from './data/destinations.js';
 import {
   createInitialState, reduce, remainingMs, formatClock, repairedCount, tokenCount, isUnlocked,
-  restorationPercent, repairBlocker, SESSION, MISSION, MAX_TOKENS,
+  repairBlocker, episodeResult, SESSION, MISSION,
 } from './game/state.js';
 import {
-  award, unlockBadge, completeDaily, dailyFor, dailyDone, setSquad, squadActive, levelOf, levelProgress,
+  award, unlockBadge, completeDaily, dailyFor, dailyDone, setSquad, squadActive, levelOf, levelProgress, recordGameScore,
   dayString, TEAMMATES, XP,
 } from './game/profile.js';
 import {
@@ -23,18 +23,19 @@ import { questsPage, missionPage, physicalPage, gamePage, rallyPage, reflectPage
 import { titleScreen, introScreen, summaryScreen, locationSheet, modalHTML, repairBanner, INTRO_LAST } from './ui/screens.js';
 import { crest } from './ui/art.js';
 import { mountGame } from './ui/games.js';
-import { burstFrom, floatFrom, floatText, shake, pop, countUp } from './ui/fx.js';
+import { burstFrom, shake, pop, countUp } from './ui/fx.js';
 import { setSoundEnabled, play } from './ui/audio.js';
 import {
   TRACK, createTrack, startTrack, pauseTrack, stopTrack, addSample, summarize, restoreTrack, walkMet, addSteps, setMotion,
 } from './game/tracking.js';
 import { createStepCounter, addMotion, pauseSteps } from './game/steps.js';
 import { requestMotion, startMotion, stopMotion } from './ui/motion.js';
-import { huntPage, patternPage, episodePage } from './ui/feature-pages.js';
+import { huntPage, patternPage, episodePage, conversationReflectionPage } from './ui/feature-pages.js';
 import { analyseImage, matchTarget, imageHash, isLikelyDuplicate } from './game/colour.js';
 import { checkAnswer } from './game/pattern.js';
 import { startWatch, stopWatch, permissionState, simulatorAllowed, setSimMode, simMode } from './ui/geo.js';
 import { walkModel, updateWalkPanel, walkBarText } from './ui/walk-view.js';
+import { multiplayerIdentity, multiplayerCredentials, createRoom, joinRoom, fetchRoom, setReady, syncPlayerProfile, reportRoomActivity } from './game/multiplayer.js';
 
 const TABS = [
   { id: 'map', label: 'Map', icon: 'map' },
@@ -44,7 +45,7 @@ const TABS = [
   { id: 'status', label: 'Status', icon: 'hourglass' },
 ];
 const LOW_TIME_MS = 2 * 60 * 1000;
-const PERFECT_BADGE = { focus: 'focus-perfect', rhythm: 'rhythm-perfect', sequence: 'patient', pattern: 'patient' };
+const PERFECT_BADGE = { thaw: 'focus-perfect', sequence: 'rhythm-perfect', pattern: 'patient' };
 
 function browserStorage() {
   try {
@@ -70,6 +71,7 @@ export function startApp(root) {
     introStep: 0, introMode: 'new', legendOpen: false, mapList: false, justUnlocked: [], settleId: null,
     newTokens: 0, lowWarned: false, squadEdit: false, squadDraft: null, profileEdit: false,
     repairing: null, banner: null, runXp: 0, runBadges: [],
+    multiplayerRoom: null, multiplayerError: '', multiplayerPlayerId: multiplayerIdentity(), multiplayerDraftName: null, multiplayerDraftCode: null,
   };
 
   let shell = null;
@@ -78,9 +80,12 @@ export function startApp(root) {
   let lastModal = null;
   let game = null;
   let camKey = null; // last screen rendered, for stopping the camera when leaving it
+  let reflectionRecognition = null;
   let noticePointer = null;
   let suppressNoticeClickUntil = 0;
   const toastTimers = new WeakMap();
+  const pendingToasts = [];
+  const TOAST_DURATION_MS = 2200;
 
   setSoundEnabled(settings.sound);
 
@@ -348,11 +353,12 @@ export function startApp(root) {
   // ---------- rewards ----------
   const runKey = (suffix) => `run:${state.session.startedAt}:${suffix}`;
 
-  function gainXp(key, amount, anchor) {
+  function gainXp(key, amount) {
     const r = award(profile, key, amount, today());
     if (!r.gained) return 0;
     profile = r.profile;
     persistProfile();
+    void syncPlayerProfile(profile.xp).then((room) => { if (room) ui.multiplayerRoom = room; }).catch(() => {});
     ui.runXp += r.gained;
     const levelBadge = shell && $('.hud-level', shell.hud);
     if (levelBadge) {
@@ -361,8 +367,7 @@ export function startApp(root) {
       levelBadge.classList.add('xp-gain');
       setTimeout(() => levelBadge.classList.remove('xp-gain'), 760);
     }
-    const target = anchor || (shell && $('.hud-level', shell.hud));
-    if (target) floatFrom(target, `+${r.gained} XP`, 'fx-float--xp');
+    toast(`+${r.gained} XP`, 'bolt', 'toast--xp');
     play('xp');
     if (r.levelUp) {
       setTimeout(() => { play('level'); toast(`Level ${levelOf(profile.xp)}!`, 'star'); }, 500);
@@ -383,7 +388,7 @@ export function startApp(root) {
     ui.runBadges.push(id);
     setTimeout(() => { play('unlock'); toast(`Badge unlocked: ${badgeName(id)}`, 'seal'); }, 700);
   }
-  const badgeName = (id) => ({ 'first-repair': 'First Fix', restored: 'Campus Restored', 'focus-perfect': 'Unplugged', 'rhythm-perfect': 'In Step', patient: 'Slow Lane', listener: 'Good Listener', 'squad-up': 'Squad Up', rally: 'Chorus', daily: 'Daily Explorer', 'streak-3': 'Three in a Row' }[id] || id);
+  const badgeName = (id) => ({ 'first-repair': 'First Fix', restored: 'Campus Restored', 'focus-perfect': 'Ice Breaker', 'rhythm-perfect': 'Colour Echo', patient: 'Pattern Pro', listener: 'Good Listener', 'squad-up': 'Squad Up', rally: 'Chorus', daily: 'Daily Explorer', 'streak-3': 'Three in a Row', 'colour-hunter': 'Colour Hunter', 'pattern-master': 'Pattern Master', 'personal-best': 'Personal Best' }[id] || id);
 
   // ---------- helpers ----------
   function dismissToast(node, direction = 0) {
@@ -393,7 +398,15 @@ export function startApp(root) {
     if (timer) clearTimeout(timer);
     node.style.setProperty('--dismiss-x', `${direction}px`);
     node.classList.add('is-dismissing');
-    setTimeout(() => node.remove(), prefersReducedMotion() ? 0 : 220);
+    setTimeout(() => {
+      node.remove();
+      if (shell?.toasts && !shell.toasts.firstElementChild) showNextToast();
+      syncNoticeSlot();
+    }, prefersReducedMotion() ? 0 : 220);
+  }
+
+  function syncNoticeSlot() {
+    if (shell?.noticeSlot) shell.noticeSlot.hidden = !shell.toasts.firstElementChild && !shell.bannerLayer.firstElementChild;
   }
 
   function dismissWalkNotice(direction = 80) {
@@ -427,17 +440,22 @@ export function startApp(root) {
   function toast(msg, ic = 'check', kind = '') {
     const host = shell ? shell.toasts : null;
     if (!host) return;
-    // Keep at most two on screen so they never bury the controls: an exact
-    // repeat replaces itself, and any new message clears stale errors.
-    [...host.children].forEach((old) => {
-      if (old.textContent === msg || old.classList.contains('toast--error')) old.remove();
-    });
-    while (host.children.length >= 2) host.firstElementChild.remove();
+    if (host.firstElementChild?.querySelector('.toast-main span')?.textContent === msg || pendingToasts.some((item) => item.msg === msg)) return;
+    // Keep at most one follow-up notice so bursts of rewards do not flood the screen.
+    if (pendingToasts.length >= 1) return;
+    pendingToasts.push({ msg, ic, kind });
+    showNextToast();
+  }
+  function showNextToast() {
+    const host = shell?.toasts;
+    if (!host || host.firstElementChild || shell.bannerLayer.firstElementChild || !pendingToasts.length) return;
+    const { msg, ic, kind } = pendingToasts.shift();
     const t = document.createElement('div');
     t.className = `toast dismissible-notice ${kind}`;
     t.innerHTML = `<button type="button" class="toast-main" data-action="dismiss-notice">${icon(ic)}<span>${esc(msg)}</span></button><button type="button" class="notice-close" data-action="dismiss-notice" aria-label="Dismiss notification">×</button>`;
     host.appendChild(t);
-    toastTimers.set(t, setTimeout(() => dismissToast(t), 3000));
+    syncNoticeSlot();
+    toastTimers.set(t, setTimeout(() => dismissToast(t), TOAST_DURATION_MS));
   }
   function refuse(msg, el) {
     play('error');
@@ -521,13 +539,13 @@ export function startApp(root) {
         <div class="hud-timer" role="timer">${icon('hourglass')}<span class="hud-clock">15:00</span></div>
         <button class="hud-signal" data-action="open-walk" aria-label="Campus grid status"><i></i><span class="hud-walk-icon" aria-hidden="true">${icon('steps', 'icon--xs')}</span></button>
         <span class="hud-spacer"></span>
-        <span class="hud-restore" title="Campus restored"><span class="ring ring--sm ring--acid"><b></b></span></span>
-        <span class="hud-tokens" title="Repair tokens">${icon('token')}<b></b></span>
         <button class="icon-btn hud-pause" data-action="pause-toggle"></button>
       </header>
+      <div class="notice-slot" hidden>
+        <div class="toast-stack" aria-live="polite"></div>
+        <div class="layer" data-layer="banner"></div>
+      </div>
       <div class="walk-status-rail" hidden><div class="walk-bar" role="group"><button class="walk-bar-main" data-action="walk-notice-dismiss">${icon('steps', 'icon--sm')}<span></span></button><button class="notice-close" data-action="dismiss-walk-notice" aria-label="Dismiss walk tracking status">×</button></div></div>
-      <div class="toast-stack" aria-live="polite"></div>
-      <div class="layer" data-layer="banner"></div>
       <div class="content"></div>
       <nav class="tabbar" aria-label="Main">
         ${TABS.map((t) => `<button class="tab" data-action="tab" data-tab="${t.id}">${icon(t.icon)}<span>${t.label}</span></button>`).join('')}
@@ -539,6 +557,7 @@ export function startApp(root) {
       content: $('.content', root),
       tabbar: $('.tabbar', root),
       walkStatusRail: $('.walk-status-rail', root),
+      noticeSlot: $('.notice-slot', root),
       bannerLayer: $('[data-layer="banner"]', root),
       sheetLayer: $('[data-layer="sheet"]', root),
       modalLayer: $('[data-layer="modal"]', root),
@@ -546,11 +565,11 @@ export function startApp(root) {
       walkBar: $('.walk-bar', root),
       map: createMapView({
         onSelectPlace: (id) => {
-        ui.selectedDestinationId = id;
-        ui.selectedMissionId = missionAtDestination(id)?.id || null;
+          ui.selectedDestinationId = id;
+          ui.selectedMissionId = missionAtDestination(id)?.id || null;
           ui.sheet = { type: 'location', id };
           ui.mapList = false;
-        ui.legendOpen = false;
+          ui.legendOpen = false;
           play('select');
           render();
           shell.map.focusPlace(id);
@@ -585,15 +604,6 @@ export function startApp(root) {
     lvl.style.setProperty('--p', Math.round(levelProgress(profile.xp) * 100));
     $('.hud-lv', lvl).textContent = `Lv ${levelOf(profile.xp)}`;
     lvl.setAttribute('aria-label', `Level ${levelOf(profile.xp)}, ${profile.xp} XP. Open rewards.`);
-    const pct = restorationPercent(state);
-    const rr = $('.hud-restore .ring', shell.hud);
-    const old = Number(rr.style.getPropertyValue('--p') || 0);
-    rr.style.setProperty('--p', pct);
-    const b = $('b', rr);
-    if (animate && old !== pct) countUp(b, old, pct, 700, (v) => `${v}%`); else b.textContent = `${pct}%`;
-    $('.hud-restore', shell.hud).setAttribute('aria-label', `Campus ${pct}% restored`);
-    $('.hud-tokens b', shell.hud).textContent = `${tokenCount(state)}`;
-    $('.hud-tokens', shell.hud).setAttribute('aria-label', `${tokenCount(state)} of ${MAX_TOKENS} repair tokens`);
     const activeMission = MISSIONS.find((m) => state.missions[m.id].status === MISSION.ACTIVE);
     const signal = $('.hud-signal', shell.hud);
     const signalState = s.status === SESSION.PAUSED ? 'paused' : activeMission ? 'active' : repairedCount(state) === MISSIONS.length ? 'stable' : 'scan';
@@ -615,7 +625,68 @@ export function startApp(root) {
     });
   }
 
-  const mapCtx = () => ({ squad: squadActive(profile), rallyDone: Boolean(profile.ledger[`rally:${today()}`]), daily: dailyFor(today()), dailyDone: dailyDone(profile, today()) });
+  const mapCtx = () => ({ squad: squadActive(profile), rallyDone: Boolean(profile.ledger[`rally:${today()}`]), daily: dailyFor(today()), dailyDone: dailyDone(profile, today()), multiplayerRoom: ui.multiplayerRoom });
+
+  function refreshVisibleMultiplayer() {
+    if (ui.screen !== 'game' || !shell) return;
+    if (ui.tab === 'map' && !ui.page) shell.map.update(state, ui, mapCtx());
+    else if (ui.tab === 'squad') render();
+  }
+
+  function acceptRoomSnapshot(room) {
+    const previous = ui.multiplayerRoom;
+    ui.multiplayerRoom = room;
+    if (!previous) return;
+    const leaderFor = (snapshot, gameId) => {
+      if (snapshot.players.length !== 2) return null;
+      const scores = snapshot.players.map((player) => player.scores?.[gameId]?.best);
+      if (scores.some((score) => !Number.isInteger(score))) return null;
+      if (scores[0] === scores[1]) return 'tie';
+      return snapshot.players[scores[0] > scores[1] ? 0 : 1].id;
+    };
+    [['sequence', 'Colour Click + Pattern'], ['episode', 'Missing-Word Conversation']].forEach(([gameId, label]) => {
+      const nextLeader = leaderFor(room, gameId);
+      if (nextLeader && nextLeader !== 'tie' && nextLeader !== leaderFor(previous, gameId)) {
+        const winner = room.players.find((player) => player.id === nextLeader);
+        play('win');
+        toast(`${winner?.name || 'A player'} takes the ${label} lead`, 'star');
+        burstFrom($('.multiplayer-panel', shell?.content) || shell?.hud, { count: 20, spread: 72 });
+      }
+    });
+    const repaired = MISSIONS.filter((mission) => !previous.activities?.[mission.id]?.repaired && room.activities?.[mission.id]?.repaired);
+    repaired.forEach((mission) => {
+      play('victory');
+      toast(`Crew patch: ${mission.name}`, 'seal');
+      if (ui.screen === 'game' && ui.tab === 'map') burstFrom(shell?.map.markerEl(mission.destinationId), { count: 24, spread: 90 });
+    });
+  }
+
+  async function refreshMultiplayer() {
+    const { code, token } = multiplayerCredentials();
+    if (!code || !token) return;
+    const oldRoomUpdated = ui.multiplayerRoom?.updatedAt;
+    try {
+      const room = await fetchRoom();
+      acceptRoomSnapshot(room);
+      ui.multiplayerError = '';
+      const me = room?.players?.find((player) => player.id === ui.multiplayerPlayerId);
+      if (me && me.xp !== profile.xp) ui.multiplayerRoom = await syncPlayerProfile(profile.xp);
+      if (oldRoomUpdated !== ui.multiplayerRoom?.updatedAt) refreshVisibleMultiplayer();
+    } catch (error) {
+      ui.multiplayerError = error.message || 'Room connection lost. Reconnect with your code.';
+      if (ui.screen === 'game' && ui.tab === 'squad') render();
+    }
+  }
+
+  async function reportMultiplayer(activity, details = {}) {
+    if (!multiplayerCredentials().token) return;
+    try {
+      const room = await reportRoomActivity(activity, details);
+      if (room) { acceptRoomSnapshot(room); ui.multiplayerError = ''; refreshVisibleMultiplayer(); }
+    } catch (error) {
+      ui.multiplayerError = error.message || 'Room sync paused; your personal progress is saved.';
+    }
+  }
 
   function pageKey() {
     return `${ui.tab}|${ui.tab === 'quests' ? ui.questView : ''}|${ui.page ? `${ui.page.type}:${ui.page.id}` : ''}`;
@@ -626,6 +697,9 @@ export function startApp(root) {
     const changed = key !== lastKey;
     const ctx = {
       state, ui, settings, profile, now: now(), today: today(), storageAvailable: storage.available,
+      multiplayerRoom: ui.multiplayerRoom, multiplayerError: ui.multiplayerError, multiplayerPlayerId: ui.multiplayerPlayerId,
+      multiplayerInviteCode: ui.multiplayerDraftCode ?? multiplayerCredentials().code,
+      multiplayerDraftName: ui.multiplayerDraftName,
       walk, walkModel: walkModel(walk, now()), simulator, simMode: simMode(), cam,
     };
     if (key !== camKey) stopCamera(); // the camera never runs on another screen
@@ -648,7 +722,8 @@ export function startApp(root) {
       const gameKind = type === 'game' ? getMission(id).digital.game : null;
       html = type === 'mission' ? missionPage(ctx, id)
         : type === 'physical' ? (getMission(id).physical.kind === 'camera' ? huntPage(ctx, id) : physicalPage(ctx, id))
-          : type === 'reflect' ? reflectPage(ctx, id) : type === 'rally' ? rallyPage(ctx)
+          : type === 'social-reflection' ? conversationReflectionPage(ctx, id)
+            : type === 'reflect' ? reflectPage(ctx, id) : type === 'rally' ? rallyPage(ctx)
             : gameKind === 'pattern' ? patternPage(ctx, id) : gameKind === 'episode' ? episodePage(ctx, id) : gamePage(ctx, id);
     } else {
       html = { quests: questsPage, inventory: inventoryPage, squad: squadPage, status: statusPage }[ui.tab](ctx);
@@ -676,12 +751,13 @@ export function startApp(root) {
     if (!host) return;
     const kind = host.dataset.gameHost;
     const id = host.dataset.id;
+    const runStartedAt = now();
     const mates = profile.squad.members.map((m) => TEAMMATES.find((t) => t.id === m)).filter(Boolean);
     game = mountGame(kind, host, {
       squad: squadActive(profile),
       mates: mates.length ? mates : TEAMMATES.slice(0, 1),
       play,
-      onWin: (result) => (kind === 'rally' ? winRally(result, host) : winDigital(id, result, host)),
+      onWin: (result) => (kind === 'rally' ? winRally(result, host) : winDigital(id, result, host, now() - runStartedAt)),
     });
   }
 
@@ -701,6 +777,8 @@ export function startApp(root) {
       if (ui.modal) $('.modal button', shell.modalLayer)?.focus({ preventScroll: true });
       lastModal = ui.modal;
     }
+    if (!ui.banner) showNextToast();
+    syncNoticeSlot();
   }
 
   function renderGame() {
@@ -744,6 +822,22 @@ export function startApp(root) {
         pop(done);
       }
     }
+    const reflectionClock = $('[data-reflection-clock]', shell.content);
+    if (reflectionClock) {
+      const started = Number(reflectionClock.dataset.started);
+      const left = Math.max(0, 30_000 - (now() - started));
+      const count = $('[data-reflection-count]', reflectionClock);
+      if (count) count.textContent = left ? String(Math.ceil(left / 1000)) : '✓';
+      const unit = $('[data-reflection-unit]', reflectionClock);
+      if (unit) unit.textContent = left ? 'sec' : 'ready';
+      const fill = $('[data-reflection-fill]', reflectionClock);
+      if (fill) fill.style.setProperty('--elapsed', `${Math.min(100, ((30_000 - left) / 30_000) * 100)}%`);
+      const submit = $('[data-reflection-submit]', shell.content);
+      const reflection = $('[data-conversation-reflection]', shell.content)?.value.trim() || '';
+      if (submit) submit.disabled = left > 0 || reflection.length < 12 || ui.reflectionLoading === ui.page?.id;
+      const hint = $('p', reflectionClock);
+      if (hint) hint.textContent = left ? 'Let the moment land…' : 'Ready when you are';
+    }
   }
 
   // ---------- navigation ----------
@@ -780,7 +874,7 @@ export function startApp(root) {
 
   function goBack() {
     if (!ui.page) return;
-    if (['physical', 'game', 'reflect'].includes(ui.page.type)) ui.page = { type: 'mission', id: ui.page.id };
+    if (['physical', 'game', 'reflect', 'social-reflection'].includes(ui.page.type)) ui.page = { type: 'mission', id: ui.page.id };
     else ui.page = null;
     play('tap');
     render();
@@ -808,27 +902,91 @@ export function startApp(root) {
   function physicalDone(id, anchor, message) {
     if (walk.id === id) walkDetach();
     ui.walkSelf = null;
-    gainXp(runKey(`${id}:physical`), XP.physical, anchor);
     ui.page = { type: 'reflect', id };
+    gainXp(runKey(`${id}:physical`), XP.physical);
     play('part');
     toast(message, 'steps');
     announce(`${message}. Quest Journal open; every question is optional.`);
     render();
   }
 
-  function winDigital(id, result, host) {
-    if (!dispatch({ type: 'SUBMIT_DIGITAL', id, result })) {
+  async function evaluateConversationReflection(id) {
+    const draft = state.drafts[id] || {};
+    const reflection = (draft.conversationReflection || '').trim();
+    const reflectionSeconds = Math.floor((now() - (draft.conversationReflectionStartedAt || now())) / 1000);
+    if (!draft.conversationReportedAt) return refuse('Confirm your conversation first.');
+    if (reflectionSeconds < 30) return refuse('Finish the 30-second reflection first.');
+    if (reflection.length < 12) return refuse('Add a little more about what you talked about.');
+    dispatch({ type: 'SAVE_DRAFT', id, draft: { conversationReflection: reflection } });
+    ui.reflectionError = '';
+    ui.reflectionLoading = id;
+    lastKey = null;
+    render();
+    try {
+      const response = await fetch('/api/reflection/evaluate', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reflection, reflectionSeconds }),
+      });
+      let data = {};
+      try { data = await response.json(); } catch { /* saved writing remains available for retry */ }
+      if (!response.ok) throw new Error(data.error || 'The reflection coach is unavailable. Your writing is saved; try again.');
+      if (typeof data.passed !== 'boolean' || !Number.isInteger(data.score) || typeof data.feedback !== 'string' || typeof data.suggestion !== 'string') throw new Error('The reflection coach returned an incomplete result. Your writing is saved; try again.');
+      dispatch({ type: 'SAVE_DRAFT', id, draft: { conversationReflectionResult: { passed: data.passed, score: data.score, feedback: data.feedback, suggestion: data.suggestion, evaluatedAt: now() } } });
+      play(data.passed ? 'win' : 'select');
+      if (data.passed) burstFrom($('.reflection-result', shell.content), { count: 24, spread: 90 });
+    } catch (error) {
+      ui.reflectionError = error.message || 'The reflection coach is unavailable. Your writing is saved; try again.';
+    } finally {
+      ui.reflectionLoading = null;
+      lastKey = null;
+      render();
+    }
+  }
+
+  function winDigital(id, result, host, elapsedMs = null) {
+    const replay = state.missions[id]?.digitalComplete === true;
+    if (!replay && !dispatch({ type: 'SUBMIT_DIGITAL', id, result })) {
       if (state.session.status !== SESSION.RUNNING) refuse('The session is not running.');
       ui.page = { type: 'mission', id };
       return render();
     }
     const mission = getMission(id);
-    gainXp(runKey(`${id}:digital`), XP.digital, host);
-    if (result.perfect) {
-      setTimeout(() => gainXp(runKey(`${id}:perfect`), XP.perfect, host), 350);
-      if (PERFECT_BADGE[mission.digital.game]) badge(PERFECT_BADGE[mission.digital.game]);
+    const gameKey = mission.digital.game;
+    const checked = gameKey === 'episode' ? null : validateMinigameResult(id, result);
+    const gameScore = gameKey === 'episode' ? episodeResult(state, id)?.total : (checked?.value?.score ?? null);
+    const activityDetails = { game: gameKey, runId: globalThis.crypto?.randomUUID?.() };
+    if (Number.isInteger(gameScore) && ['sequence', 'episode'].includes(gameKey)) {
+      activityDetails.score = gameScore;
+      activityDetails.accuracy = Math.round(gameScore / (gameKey === 'sequence' ? 300 : 15) * 100);
+      activityDetails.elapsedMs = Number.isFinite(elapsedMs) ? Math.max(0, elapsedMs) : null;
     }
-    if (mission.digital.game === 'social' || mission.digital.game === 'episode') badge('listener');
+    void reportMultiplayer(`${id}:digital`, activityDetails);
+    const record = Number.isInteger(gameScore) ? recordGameScore(profile, gameKey, gameScore) : null;
+    if (record) {
+      profile = record.profile;
+      persistProfile();
+      if (record.newBest) {
+        badge('personal-best');
+        gainXp(runKey(`${id}:personal-best`), XP.personalBest);
+      }
+      if (gameKey === 'sequence' && gameScore >= 280) badge('pattern-master');
+    }
+    if (!replay) {
+      gainXp(runKey(`${id}:digital`), XP.digital);
+      if (result.perfect) {
+        setTimeout(() => gainXp(runKey(`${id}:perfect`), XP.perfect), 350);
+        if (PERFECT_BADGE[mission.digital.game]) badge(PERFECT_BADGE[mission.digital.game]);
+      }
+      if (mission.digital.game === 'social' || mission.digital.game === 'episode') badge('listener');
+    }
+    if (replay) {
+      ui.page = { type: 'mission', id };
+      play(record?.newBest ? 'level' : 'win');
+      toast(record?.newBest ? `New personal best · ${gameScore}` : `Run saved · ${gameScore}`, record?.newBest ? 'star' : 'bolt');
+      lastKey = null;
+      render();
+      return;
+    }
     ui.page = { type: 'mission', id };
     ui.justDone = 'digital';
     play('part');
@@ -839,7 +997,7 @@ export function startApp(root) {
 
   function winRally(result, host) {
     if (!squadActive(profile)) return;
-    const gained = gainXp(`rally:${today()}`, XP.rally, host);
+    const gained = gainXp(`rally:${today()}`, XP.rally);
     profile = setSquad(profile, { rallyBest: Math.max(profile.squad.rallyBest || 0, result.rounds || 0), xp: (profile.squad.xp || 0) + gained });
     persistProfile();
     badge('rally');
@@ -870,13 +1028,14 @@ export function startApp(root) {
       ui.justUnlocked = unlocked;
       ui.newTokens = 2;
       render();
+      void reportMultiplayer(`${id}:repaired`);
       shell.map.focusPlace(mission.destinationId);
       setTimeout(() => {
         const pin = shell && shell.map.markerEl(mission.destinationId);
         burstFrom(pin, { count: 34, spread: 140 });
-        let xp = gainXp(runKey(`${id}:repair`), XP.repair, pin);
+        let xp = gainXp(runKey(`${id}:repair`), XP.repair);
         if (squadActive(profile)) {
-          const sq = gainXp(runKey(`${id}:squad`), XP.squadBonus, pin);
+          const sq = gainXp(runKey(`${id}:squad`), XP.squadBonus);
           if (sq) { profile = setSquad(profile, { xp: (profile.squad.xp || 0) + sq + XP.repair }); persistProfile(); }
           xp += sq;
         }
@@ -912,8 +1071,7 @@ export function startApp(root) {
     'walk-notice-dismiss': () => dismissWalkNotice(),
     'start-game': () => {
       const inProgress = [SESSION.RUNNING, SESSION.PAUSED].includes(state.session.status);
-      const go = () => (profile.tutorialSeen ? begin() : goScreen('intro', { introStep: 0, introMode: 'new' }));
-      if (!inProgress) return go();
+      if (!inProgress) return (profile.tutorialSeen ? begin() : goScreen('intro', { introStep: 0, introMode: 'new' }));
       root.querySelector('.title-actions').innerHTML = `
         <p class="title-confirm">Start fresh? Your current session will end. XP and badges stay.</p>
         <button class="btn btn--acid btn--block" data-action="start-game-yes">Start new session</button>
@@ -987,32 +1145,33 @@ export function startApp(root) {
         play('start');
         toast('Challenge accepted', 'play');
       }
-      openMission(id);
     },
     'open-physical': (t) => {
-      const m = state.missions[t.dataset.id];
+      const id = t.dataset.id;
+      const m = state.missions[id];
       if (m.status !== MISSION.ACTIVE) return refuse(m.status === MISSION.REPAIRED ? 'Already repaired.' : 'Accept the challenge first.', t);
       if (state.session.status !== SESSION.RUNNING) return refuse('Resume the session first.', t);
       if (m.physicalComplete) return refuse('Physical part already done.', t);
-      if (getMission(t.dataset.id).physical.kind === 'walk') walkAttach(t.dataset.id);
-      if (getMission(t.dataset.id).physical.kind === 'camera') {
-        dispatch({ type: 'HUNT_INIT', id: t.dataset.id });
-        dispatch({ type: 'MARK_STARTED', id: t.dataset.id, part: 'physical' });
-        if (cam.id !== t.dataset.id) camReset();
-        cam.id = t.dataset.id;
+      if (getMission(id).physical.kind === 'walk') walkAttach(id);
+      if (getMission(id).physical.kind === 'camera') {
+        dispatch({ type: 'HUNT_INIT', id });
+        dispatch({ type: 'MARK_STARTED', id, part: 'physical' });
+        if (cam.id !== id) camReset();
+        cam.id = id;
       }
-      ui.page = { type: 'physical', id: t.dataset.id };
+      ui.page = { type: 'physical', id };
       play('open');
       render();
     },
     'open-digital': (t) => {
-      const m = state.missions[t.dataset.id];
+      const id = t.dataset.id;
+      const m = state.missions[id];
       if (m.status !== MISSION.ACTIVE) return refuse(m.status === MISSION.REPAIRED ? 'Already repaired.' : 'Accept the challenge first.', t);
       if (state.session.status !== SESSION.RUNNING) return refuse('Resume the session first.', t);
       if (m.digitalComplete) return refuse('Digital mission already won.', t);
-      dispatch({ type: 'MARK_STARTED', id: t.dataset.id, part: 'digital' });
-      if (getMission(t.dataset.id).digital.game === 'pattern') dispatch({ type: 'PATTERN_INIT', id: t.dataset.id, seed: (now() ^ 0x5bd1e995) >>> 0 });
-      ui.page = { type: 'game', id: t.dataset.id };
+      dispatch({ type: 'MARK_STARTED', id, part: 'digital' });
+      if (getMission(id).digital.game === 'pattern') dispatch({ type: 'PATTERN_INIT', id, seed: (now() ^ 0x5bd1e995) >>> 0 });
+      ui.page = { type: 'game', id };
       play('open');
       render();
     },
@@ -1041,13 +1200,77 @@ export function startApp(root) {
         return refuse('Timer still running. Stopped early? Use the link below.', t);
       }
       if (['timer', 'walk'].includes(mission.physical.kind) && !draft.timerStartedAt) return refuse('Start the timer first.', t);
+      if (mission.id === 'missing-connection') {
+        if (!draft.consent) return refuse('Confirm they were happy to chat.', t);
+        const startedAt = now();
+        dispatch({ type: 'SAVE_DRAFT', id, draft: { conversationReportedAt: startedAt, conversationReflectionStartedAt: startedAt, conversationReflection: '', conversationReflectionResult: null } });
+        ui.reflectionError = '';
+        ui.page = { type: 'social-reflection', id };
+        play('part');
+        lastKey = null;
+        render();
+        return;
+      }
       if (mission.physical.kind === 'camera') {
-        if (!dispatch({ type: 'COMPLETE_PHYSICAL', id, method: 'self' })) return refuse('Collect all five colours first.', t);
+        if (!dispatch({ type: 'COMPLETE_PHYSICAL', id, method: t.dataset.report === 'true' ? 'reported' : 'self' })) return refuse('Finish or report your colour hunt first.', t);
         camReset();
-        return physicalDone(id, t, 'Colour hunt complete: every photo checked');
+        return physicalDone(id, t, t.dataset.report === 'true' ? 'Colour hunt self-reported' : 'Colour hunt checked by camera');
       }
       if (!dispatch({ type: 'COMPLETE_PHYSICAL', id, note: draft.note, method: 'self' })) return refuse(repairBlocker(state, id) || 'Not available right now.', t);
       physicalDone(id, t, 'Physical challenge complete (self-reported)');
+    },
+    'report-colour-hunt': (t) => {
+      const id = t.dataset.id;
+      if (!dispatch({ type: 'COMPLETE_PHYSICAL', id, method: 'reported' })) return refuse('Accept the quest and report your hunt.', t);
+      camReset();
+      physicalDone(id, t, 'Colour hunt self-reported');
+    },
+    'conversation-reflection-submit': (t) => {
+      if (ui.reflectionLoading) return;
+      evaluateConversationReflection(t.dataset.id);
+    },
+    'conversation-reflection-again': (t) => {
+      const id = t.dataset.id;
+      dispatch({ type: 'SAVE_DRAFT', id, draft: { conversationReflectionStartedAt: now(), conversationReflectionResult: null } });
+      ui.reflectionError = '';
+      play('start');
+      lastKey = null;
+      render();
+    },
+    'conversation-reflection-continue': (t) => {
+      const id = t.dataset.id;
+      if (!dispatch({ type: 'COMPLETE_PHYSICAL', id, method: 'ai-reflection' })) return refuse('Finish the reflection check before continuing.', t);
+      gainXp(runKey(`${id}:physical`), XP.physical);
+      void reportMultiplayer(`${id}:physical`);
+      ui.justDone = 'physical';
+      play('part');
+      toast('Conversation reflection complete', 'squad');
+      ui.page = { type: 'mission', id };
+      announce('Conversation reflection complete. Quest Journal open; every question is optional.');
+      lastKey = null;
+      render();
+    },
+    'conversation-reflection-speak': (t) => {
+      const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!Recognition) return refuse('Voice input is not available in this browser.', t);
+      if (reflectionRecognition) reflectionRecognition.abort();
+      const recognition = new Recognition();
+      reflectionRecognition = recognition;
+      recognition.lang = 'en-IN';
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+      recognition.onresult = (event) => {
+        const transcript = event.results?.[0]?.[0]?.transcript || '';
+        const field = $('[data-conversation-reflection]', shell.content);
+        if (!field) return;
+        field.value = `${field.value.trim()} ${transcript}`.trim().slice(0, 500);
+        field.dispatchEvent(new Event('input', { bubbles: true }));
+        field.focus();
+      };
+      recognition.onerror = () => { ui.reflectionError = 'Voice input did not start. Type your reflection instead.'; };
+      recognition.onend = () => { reflectionRecognition = null; };
+      ui.reflectionError = '';
+      try { recognition.start(); } catch { ui.reflectionError = 'Voice input did not start. Type your reflection instead.'; }
     },
     'cam-open': async (t) => {
       cam.error = '';
@@ -1116,7 +1339,7 @@ export function startApp(root) {
       const solvedNow = state.puzzles[id].solved[r] && !ps.solved[r];
       if (res.correct && solvedNow) {
         play('level');
-        const gained = gainXp(runKey(`${id}:round${r + 1}`), XP.round, t);
+        const gained = gainXp(runKey(`${id}:round${r + 1}`), XP.round);
         toast(`Round ${r + 1} cleared!${gained ? ` +${gained} XP` : ''}`, 'star');
         announce(`Round ${r + 1} cleared.`);
         ui.pattern = r === 0 ? { round: 1, answer: [], feedback: null, cleared: 0 } : { round: 1, answer, feedback: res };
@@ -1241,15 +1464,15 @@ export function startApp(root) {
       profile = r.profile;
       persistProfile();
       ui.runXp += r.gained;
-      floatFrom(t, `+${r.gained} XP`, 'fx-float--xp');
-      burstFrom(t, { count: 18, spread: 70 });
       play('xp');
       if (r.levelUp) setTimeout(() => { play('level'); toast(`Level ${levelOf(profile.xp)}!`, 'star'); }, 500);
       if (r.streakBadge) badgeToast('streak-3');
       badge('daily');
-      toast('Daily challenge done', 'star');
       lastSheet = undefined;
       render();
+      const reward = $('.daily-xp-earned', shell.content) || $('.hud-level', shell.hud);
+      burstFrom(reward, { count: 18, spread: 70 });
+      toast(`Daily challenge complete · +${r.gained} XP`, 'star');
     },
     'open-rally': (t) => {
       if (!squadActive(profile)) return refuse('Switch to Squad mode first.', t);
@@ -1271,6 +1494,37 @@ export function startApp(root) {
     },
     'squad-edit': () => { ui.squadEdit = true; ui.squadDraft = null; render(); },
     'squad-cancel': () => { ui.squadEdit = false; ui.squadDraft = null; render(); },
+    'room-create': async () => {
+      ui.multiplayerError = '';
+      const name = $('[data-room-name]', shell.content)?.value.trim() || '';
+      if (!name) { ui.multiplayerError = 'Add your call sign so your friend knows it’s you.'; return render(); }
+      try {
+        ui.multiplayerRoom = await createRoom(name);
+        await syncPlayerProfile(profile.xp);
+        ui.multiplayerRoom = await fetchRoom();
+        play('unlock'); toast(`Room ${ui.multiplayerRoom.code} is live`, 'squad'); render();
+      } catch (error) { ui.multiplayerError = error.message; render(); }
+    },
+    'room-join': async () => {
+      ui.multiplayerError = '';
+      const code = $('[data-room-code]', shell.content)?.value || '';
+      const name = $('[data-room-name]', shell.content)?.value.trim() || '';
+      if (!name) { ui.multiplayerError = 'Add your call sign so your friend knows it’s you.'; return render(); }
+      try {
+        ui.multiplayerRoom = await joinRoom(code, name);
+        await syncPlayerProfile(profile.xp);
+        ui.multiplayerRoom = await fetchRoom();
+        play('unlock'); toast('You joined the campus crew', 'squad'); render();
+      } catch (error) { ui.multiplayerError = error.message; render(); }
+    },
+    'room-ready': async (t) => {
+      try { ui.multiplayerRoom = await setReady(t.dataset.ready === 'true'); ui.multiplayerError = ''; play('select'); render(); }
+      catch (error) { ui.multiplayerError = error.message; render(); }
+    },
+    'room-copy': async () => {
+      try { await navigator.clipboard.writeText(ui.multiplayerRoom.code); toast('Room code copied', 'check'); }
+      catch { toast(`Room code: ${ui.multiplayerRoom.code}`, 'squad'); }
+    },
     'invite-team': async (button) => {
       const emails = profile.squad.emails || [];
       if (!emails.length) { ui.squadEdit = true; render(); return refuse('Add player email addresses first.'); }
@@ -1281,7 +1535,7 @@ export function startApp(root) {
         const response = await fetch('/api/invite', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ teamName: profile.squad.name, emails }),
+          body: JSON.stringify({ teamName: profile.squad.name, emails, roomCode: ui.multiplayerRoom?.code || '' }),
         });
         const result = await response.json();
         if (!response.ok) throw new Error(result.error || 'Email sending failed.');
@@ -1507,6 +1761,8 @@ export function startApp(root) {
   });
 
   root.addEventListener('input', (e) => {
+    if (e.target.matches('[data-room-name]')) ui.multiplayerDraftName = e.target.value;
+    if (e.target.matches('[data-room-code]')) ui.multiplayerDraftCode = e.target.value.toUpperCase();
     if (e.target.id === 'ep-input') ui.episodeDraft = e.target.value;
     if (e.target.id === 'intro-profile-name') {
       profile = { ...profile, fieldName: e.target.value.slice(0, 24) };
@@ -1514,6 +1770,8 @@ export function startApp(root) {
     }
     const note = e.target.closest('[data-note]');
     if (note) dispatch({ type: 'SAVE_DRAFT', id: note.dataset.note, draft: { note: note.value } });
+    const conversationReflection = e.target.closest('[data-conversation-reflection]');
+    if (conversationReflection) dispatch({ type: 'SAVE_DRAFT', id: ui.page?.id || 'missing-connection', draft: { conversationReflection: conversationReflection.value } });
   });
 
   root.addEventListener('change', (e) => {
@@ -1569,8 +1827,10 @@ export function startApp(root) {
       const rem = remainingMs(state, now());
       if (ui.screen === 'game' && !ui.lowWarned && rem > 0 && rem <= LOW_TIME_MS) {
         ui.lowWarned = true;
-        toast('Two minutes left. No need to rush.', 'hourglass');
-        announce('Two minutes left.');
+        if (ui.page?.type !== 'social-reflection') {
+          toast('Two minutes left. No need to rush.', 'hourglass');
+          announce('Two minutes left.');
+        }
       }
     }
     if (walk.id && walk.track.status === TRACK.TRACKING && now() - walk.savedAt > 5000) walkSave();
@@ -1586,7 +1846,7 @@ export function startApp(root) {
 
   // Audio can only start after a gesture; prime it on the first interaction.
   root.addEventListener('pointerdown', () => setSoundEnabled(settings.sound), { once: true });
-
   render();
-  void floatText;
+  void refreshMultiplayer();
+  setInterval(refreshMultiplayer, 2500);
 }

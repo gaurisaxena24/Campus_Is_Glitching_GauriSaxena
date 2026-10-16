@@ -176,6 +176,45 @@
 .dim-track i { width: 22px; height: 8px; border-radius: 4px; background: var(--bg-4); }
 .dim-track i.on { background: var(--acid); }
 
+/* ---------- Lost Connection reflection ---------- */
+.page-inner--conversation-reflection { gap: var(--s3); align-content: start; max-width: 680px; margin-inline: auto; width: 100%; }
+.page-inner--conversation-reflection .mission-top { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); }
+.reflection-card { display: grid; justify-items: center; gap: var(--s3); padding: clamp(18px, 5vw, 32px); border: 1px solid var(--line-2); border-radius: var(--r-lg); background: radial-gradient(ellipse at 50% 0%, rgba(182, 230, 50, 0.09), transparent 58%), var(--bg); text-align: center; overflow: hidden; }
+.reflection-card > .eyebrow, .reflection-card > h1 { margin: 0; }
+.reflection-card > .eyebrow { color: var(--acid); }
+.reflection-scene { position: relative; width: 112px; height: 66px; display: grid; place-items: center; color: var(--acid); }
+.reflection-link { display: grid; place-items: center; width: 50px; height: 50px; border: 1px solid rgba(182, 230, 50, 0.45); border-radius: 50%; background: rgba(182, 230, 50, 0.1); animation: reflection-pulse 1.8s ease-in-out infinite; }
+.reflection-bubble { position: absolute; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50% 50% 50% 4px; background: var(--cream); color: var(--bg-0); font-weight: 900; animation: reflection-float 2.2s ease-in-out infinite; }
+.reflection-bubble--one { left: 5px; top: 4px; }
+.reflection-bubble--two { right: 5px; top: 20px; animation-delay: -1s; }
+.reflection-clock { display: grid; justify-items: center; gap: 8px; }
+.reflection-clock-face { display: flex; align-items: baseline; gap: 4px; }
+.reflection-clock-face strong { font-family: var(--font-num); font-size: clamp(2.5rem, 12vw, 4rem); line-height: 1; color: var(--acid); font-variant-numeric: tabular-nums; }
+.reflection-clock-face small { color: var(--cream-3); }
+.reflection-clock-face small[data-reflection-unit='ready'] { color: var(--acid); font-size: var(--fs-xs); font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; }
+.reflection-clock-track { width: min(260px, 70vw); height: 6px; border-radius: 99px; background: var(--bg-4); overflow: hidden; }
+.reflection-clock-track i { display: block; height: 100%; width: var(--elapsed); border-radius: inherit; background: linear-gradient(90deg, var(--acid), #e8f68b); transition: width 250ms linear; box-shadow: 0 0 14px rgba(182, 230, 50, 0.5); }
+.reflection-clock p { margin: 0; color: var(--cream-3); font-size: var(--fs-xs); }
+.reflection-card .field { width: 100%; text-align: left; }
+.reflection-card .textarea { min-height: 94px; resize: vertical; }
+.reflection-privacy, .reflection-honesty { max-width: 440px; margin: 0; font-size: var(--fs-xs); }
+.reflection-honesty { color: var(--cream-3); }
+.reflection-card .btn { width: 100%; max-width: 440px; }
+.reflection-result { display: grid; justify-items: center; gap: var(--s3); width: 100%; padding: var(--s4); text-align: center; animation: stamp 450ms var(--spring); }
+.reflection-result.is-pass { border-color: var(--acid); box-shadow: 0 0 34px rgba(182, 230, 50, 0.1); }
+.reflection-result.is-retry { border-color: rgba(232, 134, 58, 0.65); }
+.reflection-result-mark { display: grid; place-items: center; width: 60px; height: 60px; border-radius: 50%; color: var(--acid); background: rgba(182, 230, 50, 0.12); }
+.reflection-result.is-retry .reflection-result-mark { color: var(--orange); background: rgba(232, 134, 58, 0.12); }
+.reflection-result h1, .reflection-result p { margin: 0; }
+.reflection-result h1 { font-size: var(--fs-xl); }
+.reflection-result p { max-width: 48ch; }
+.reflection-result small { color: var(--cream-3); font-size: var(--fs-xs); }
+.reflection-suggestion { padding: var(--s3); border-radius: var(--r-md); background: var(--bg-2); color: var(--cream-2); font-size: var(--fs-sm); }
+@keyframes reflection-pulse { 50% { transform: scale(1.08); box-shadow: 0 0 24px rgba(182, 230, 50, 0.24); } }
+@keyframes reflection-float { 50% { transform: translateY(-5px) rotate(-5deg); } }
+@media (max-width: 420px) { .reflection-card { padding: var(--s3); } .page-inner--conversation-reflection .engine-tag { font-size: 0.55rem; } }
+@media (prefers-reduced-motion: reduce) { .reflection-link, .reflection-bubble { animation: none; } }
+
 .reduce-motion .bubble--typing i, .reduce-motion .pslot.next { animation: none; }
 @media (prefers-reduced-motion: reduce) { .bubble--typing i, .pslot.next { animation: none; } }
 

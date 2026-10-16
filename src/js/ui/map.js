@@ -15,6 +15,33 @@ const MAX_SCALE = 1.6;
 const PAD = 48;
 const LIVE = new Set(['AVAILABLE', 'ACTIVE', 'PHYSICAL_COMPLETE', 'DIGITAL_COMPLETE', 'READY']);
 
+// The map objective always follows saved quest state in mission order; a
+// tracked or just-completed quest must never displace the next live quest.
+export function questChipHTML(state) {
+  const next = MISSIONS.find((m) => !['REPAIRED', 'LOCKED'].includes(displayState(state, m.id)));
+  if (!next) {
+    return `<div class="quest-chip quest-chip--complete" role="status" aria-label="Campus restored. All glitches repaired.">
+      <span class="chip-icon chip-icon--REPAIRED">${icon(STATE_ICON.REPAIRED)}</span>
+      <span class="chip-text"><strong>Campus Restored</strong><small>Entire campus · All glitches repaired</small></span>
+      <span class="chip-play" aria-hidden="true">${icon('next', 'icon--sm')}</span>
+    </div>`;
+  }
+  const ds = displayState(state, next.id);
+  const dest = DESTINATIONS.find((d) => d.id === next.destinationId);
+  const stateText = {
+    AVAILABLE: 'Available',
+    ACTIVE: 'In progress',
+    PHYSICAL_COMPLETE: STATE_LABEL.PHYSICAL_COMPLETE,
+    DIGITAL_COMPLETE: STATE_LABEL.DIGITAL_COMPLETE,
+    READY: STATE_LABEL.READY,
+  }[ds];
+  return `<button class="quest-chip" data-open-mission="${next.id}" aria-label="Open ${esc(next.name)} at ${esc(dest.label)}. ${stateText}.">
+    <span class="chip-icon chip-icon--${ds}">${icon(STATE_ICON[ds])}</span>
+    <span class="chip-text"><strong>${esc(next.name)}</strong><small>${esc(dest.label)} · ${stateText}</small></span>
+    <span class="chip-play">${icon('next', 'icon--sm')}</span>
+  </button>`;
+}
+
 export function createMapView({ onSelectPlace, onOpenMission, onToggleLegend, onToggleList }) {
   const root = document.createElement('div');
   root.className = 'map-page';
@@ -267,7 +294,10 @@ export function createMapView({ onSelectPlace, onOpenMission, onToggleLegend, on
   // ---------- rendering ----------
   function placeState(dest, state, ctx) {
     const mission = missionAtDestination(dest.id);
-    if (mission) return { kind: 'glitch', mission, ds: displayState(state, mission.id) };
+    if (mission) {
+      const shared = Boolean(ctx.multiplayerRoom?.activities?.[mission.id]?.repaired);
+      return { kind: 'glitch', mission, ds: shared ? 'REPAIRED' : displayState(state, mission.id), shared };
+    }
     if (dest.id === SQUAD_RALLY.destinationId && ctx.squad) {
       const open = repairedCount(state) >= SQUAD_RALLY.unlockAt || state.unlockAll;
       return { kind: 'rally', ds: open ? 'RALLY' : 'LOCKED', done: ctx.rallyDone };
@@ -292,11 +322,11 @@ export function createMapView({ onSelectPlace, onOpenMission, onToggleLegend, on
     let label = '';
     if (ps.kind === 'glitch') {
       const m = state.missions[ps.mission.id];
-      if (m.status === MISSION.ACTIVE) extra = `<span class="marker-pips" aria-hidden="true"><i class="phys${m.physicalComplete ? ' on' : ''}"></i><i class="dig${m.digitalComplete ? ' on' : ''}"></i></span>`;
+      if (m.status === MISSION.ACTIVE && !ps.shared) extra = `<span class="marker-pips" aria-hidden="true"><i class="phys${m.physicalComplete ? ' on' : ''}"></i><i class="dig${m.digitalComplete ? ' on' : ''}"></i></span>`;
       if (ds === 'LOCKED') extra = `<span class="lock-tag" aria-hidden="true">${icon('lock', 'icon--xs')}${ps.mission.unlockAt}</span>`;
       label = ds === 'LOCKED'
         ? `${dest.name}. Locked: repair ${ps.mission.unlockAt} glitch${ps.mission.unlockAt === 1 ? '' : 'es'} to unlock.`
-        : `${dest.name}. ${ps.mission.name}: ${STATE_LABEL[ds]}.`;
+        : ps.shared ? `${dest.name}. ${ps.mission.name}: repaired by your room team.` : `${dest.name}. ${ps.mission.name}: ${STATE_LABEL[ds]}.`;
     } else {
       label = `${dest.name}. ${STATE_LABEL[ds]}${ps.done ? ', done' : ''}.`;
       if (ps.done) extra = `<span class="done-tag" aria-hidden="true">${icon('check', 'icon--xs')}</span>`;
@@ -305,6 +335,7 @@ export function createMapView({ onSelectPlace, onOpenMission, onToggleLegend, on
       'marker', `marker--${ps.kind}`, selected,
       LIVE.has(ds) && ds !== 'READY' ? 'glitching' : '',
       ds === 'READY' ? 'ready' : '',
+      ps.shared ? 'team-repaired' : '',
       ps.mission && ui.justUnlocked && ui.justUnlocked.includes(ps.mission.id) ? 'unlocked-now' : '',
       ps.mission && ui.settleId === ps.mission.id ? 'settled' : '',
       ps.done ? 'is-done' : '',
@@ -313,10 +344,10 @@ export function createMapView({ onSelectPlace, onOpenMission, onToggleLegend, on
       ${pinSVG(ds)}${extra}<span class="plaque${LIVE.has(ds) ? ' corrupt' : ''}" aria-hidden="true">${esc(dest.label)}</span></button>`;
   }
 
-  function zonesHTML(state) {
+  function zonesHTML(state, ctx) {
     return MISSIONS.map((mi) => {
       const d = DESTINATIONS.find((x) => x.id === mi.destinationId);
-      const ds = displayState(state, mi.id);
+      const ds = ctx.multiplayerRoom?.activities?.[mi.id]?.repaired ? 'REPAIRED' : displayState(state, mi.id);
       const cls = ds === 'REPAIRED' ? 'zone zone--fixed' : ds === 'LOCKED' ? 'zone zone--locked' : 'zone zone--glitch';
       return `<span class="${cls}" style="left:${d.pos.x}%;top:${d.pos.y}%"><i></i><i></i><i></i></span>`;
     }).join('');
@@ -340,21 +371,6 @@ export function createMapView({ onSelectPlace, onOpenMission, onToggleLegend, on
     </section>`;
   }
 
-  function chipHTML(state, ui) {
-    const active = MISSIONS.find((m) => state.missions[m.id].status === MISSION.ACTIVE && displayState(state, m.id) !== 'LOCKED');
-    const tracked = MISSIONS.find((m) => m.id === ui.selectedMissionId && displayState(state, m.id) !== 'LOCKED');
-    const next = tracked || active || MISSIONS.find((m) => displayState(state, m.id) === 'AVAILABLE');
-    if (!next) return '';
-    const ds = displayState(state, next.id);
-    const dest = DESTINATIONS.find((d) => d.id === next.destinationId);
-    const stateText = ds === 'READY' ? 'Ready to repair' : ds === 'REPAIRED' ? 'Repaired' : tracked ? 'Tracked' : active ? 'In progress' : 'Available';
-    return `<button class="quest-chip" data-open-mission="${next.id}" aria-label="Open ${esc(next.name)} at ${esc(dest.label)}. ${stateText}.">
-      <span class="chip-icon chip-icon--${ds}">${icon(STATE_ICON[ds])}</span>
-      <span class="chip-text"><strong>${esc(next.name)}</strong><small>${esc(dest.label)} · ${stateText}</small></span>
-      <span class="chip-play">${icon('next', 'icon--sm')}</span>
-    </button>`;
-  }
-
   function listHTML(state, ctx) {
     const items = DESTINATIONS.map((d) => {
       const ps = placeState(d, state, ctx);
@@ -373,12 +389,16 @@ export function createMapView({ onSelectPlace, onOpenMission, onToggleLegend, on
     lastState = state;
     lastUi = ui;
     lastCtx = ctx;
-    world.style.setProperty('--restore', (restorationPercent(state) / 100).toFixed(2));
-    const restored = restorationPercent(state);
+    const restoredCount = ctx.multiplayerRoom
+      ? MISSIONS.filter((mission) => ctx.multiplayerRoom.activities?.[mission.id]?.repaired).length
+      : repairedCount(state);
+    const restored = Math.round((restoredCount / MISSIONS.length) * 100);
+    world.style.setProperty('--restore', (restored / 100).toFixed(2));
     const telemetry = root.querySelector('.map-telemetry');
     const active = MISSIONS.some((m) => state.missions[m.id].status === MISSION.ACTIVE);
+    const glitching = MISSIONS.some((m) => displayState(state, m.id) === 'AVAILABLE');
     const label = ui.settleId ? 'SYSTEM RECONSTRUCTING' : ui.justUnlocked.length ? 'NEW ANOMALY DETECTED' : active ? 'SIGNAL ACQUIRED' : restored === 100 ? 'GRID STABLE' : 'SYNCING CAMPUS GRID';
-    telemetry.dataset.signal = ui.settleId ? 'repair' : ui.justUnlocked.length ? 'unlock' : active ? 'active' : 'scan';
+    telemetry.dataset.signal = ui.settleId ? 'repair' : ui.justUnlocked.length ? 'unlock' : active ? 'active' : glitching ? 'glitching' : 'scan';
     telemetry.querySelector('.map-telemetry__label').textContent = label;
     telemetry.querySelector('b strong').textContent = `${restored}%`;
     clearTimeout(telemetryTimer);
@@ -386,18 +406,21 @@ export function createMapView({ onSelectPlace, onOpenMission, onToggleLegend, on
       telemetryTimer = setTimeout(() => {
         const current = lastState;
         if (!current || !root.isConnected) return;
-        const currentRestored = restorationPercent(current);
+        const currentRestored = lastCtx.multiplayerRoom
+          ? Math.round((MISSIONS.filter((mission) => lastCtx.multiplayerRoom.activities?.[mission.id]?.repaired).length / MISSIONS.length) * 100)
+          : restorationPercent(current);
         const currentActive = MISSIONS.some((m) => current.missions[m.id].status === MISSION.ACTIVE);
-        telemetry.dataset.signal = currentActive ? 'active' : 'scan';
+        const currentGlitching = MISSIONS.some((m) => displayState(current, m.id) === 'AVAILABLE');
+        telemetry.dataset.signal = currentActive ? 'active' : currentGlitching ? 'glitching' : 'scan';
         telemetry.querySelector('.map-telemetry__label').textContent = currentActive ? 'SIGNAL ACQUIRED' : currentRestored === 100 ? 'GRID STABLE' : 'SYNCING CAMPUS GRID';
       }, 1500);
     }
-    zonesEl.innerHTML = zonesHTML(state);
+    zonesEl.innerHTML = zonesHTML(state, ctx);
     markersEl.innerHTML = DESTINATIONS.map((d) => markerHTML(d, state, ui, ctx)).join('');
     const listOn = ui.mapList || imageFailed;
     root.querySelector('[data-map="list"]').setAttribute('aria-pressed', String(listOn));
     root.querySelector('[data-map="legend"]').setAttribute('aria-pressed', String(Boolean(ui.legendOpen)));
-    overlays.innerHTML = listOn ? listHTML(state, ctx) : `${ui.legendOpen ? legendHTML() : ''}${ui.sheet || ui.legendOpen ? '' : chipHTML(state, ui)}`;
+    overlays.innerHTML = listOn ? listHTML(state, ctx) : `${ui.legendOpen ? legendHTML() : ''}${ui.sheet || ui.legendOpen ? '' : questChipHTML(state)}`;
     if (!initialised) requestAnimationFrame(measure);
     queueDeclutter();
   }

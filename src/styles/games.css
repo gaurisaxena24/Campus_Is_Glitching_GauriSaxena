@@ -23,6 +23,28 @@
 .game-pass strong { font-family: var(--font-display); font-size: var(--fs-xl); color: var(--acid); }
 .game-pass span { color: var(--cream-2); font-size: var(--fs-sm); }
 
+/* Frozen Character: pointer-led movement with a luminous melting trail. */
+.thaw-board { --melt: 0; position: absolute; inset: 0; overflow: hidden; cursor: crosshair; touch-action: none; background: radial-gradient(ellipse at 50% 45%, #26331a, #11110d 76%); }
+.thaw-board::before { content: ''; position: absolute; inset: 0; opacity: calc(.08 + var(--melt) * .24); background: radial-gradient(circle at 50% 50%, rgba(182, 230, 50, .28), transparent 58%); pointer-events: none; }
+.thaw-board--preview { position: relative; inset: auto; width: 100%; height: 100%; min-height: 220px; }
+.thaw-trail { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.thaw-trail circle { fill: #c9ff43; stroke: #efffc1; stroke-width: 1.5; opacity: .98; filter: drop-shadow(0 0 7px rgba(182, 230, 50, 1)); animation: thawTrail 2.4s ease-out forwards; }
+@keyframes thawTrail { to { opacity: .34; } }
+.thaw-ice { position: absolute; z-index: 1; left: 50%; top: 50%; width: 92px; height: 92px; padding: 0; border: 0; background: transparent; transform: translate(-50%, -50%) scale(var(--ice-scale, 1)); opacity: var(--ice-opacity, 1); filter: drop-shadow(0 0 16px rgba(135, 222, 236, .3)); transition: filter 180ms, opacity 220ms; pointer-events: none; }
+.thaw-ice svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.thaw-cube { fill: color-mix(in srgb, #9de7ef calc((1 - var(--melt)) * 75%), #b6e632); stroke: #d8fbff; stroke-width: 3; transition: fill 220ms; }
+.thaw-glint { fill: none; stroke: rgba(255,255,255,.85); stroke-width: 3; stroke-linecap: round; }
+.thaw-eye { fill: #15221b; }
+.thaw-cracks { fill: none; stroke: rgba(255,255,255,.85); stroke-width: 2.3; stroke-linecap: round; opacity: var(--crack-opacity, 0); }
+.thaw-ice.is-dragging { filter: drop-shadow(0 0 22px rgba(182, 230, 50, .8)); }
+.thaw-ice.is-nearly-melted { animation: thawPop 520ms var(--spring) forwards; }
+@keyframes thawPop { 55% { transform: translate(-50%, -65%) scale(1.3); } to { transform: translate(-50%, -50%) scale(.15); opacity: 0; } }
+.thaw-puddle { position: absolute; z-index: 0; left: 50%; top: 50%; width: 84px; height: 24px; border-radius: 50%; background: rgba(182, 230, 50, .3); filter: blur(5px); transform: translate(-50%, -50%) scale(var(--puddle-scale, .3)); transition: transform 180ms, opacity 180ms; }
+.thaw-drop { position: absolute; z-index: 2; width: 7px; height: 10px; border-radius: 70% 30% 60% 40%; background: #b6e632; opacity: 0; pointer-events: none; }
+.thaw-drop--one { left: 42%; top: 42%; animation: thawDrop 1.2s ease-in infinite; }
+.thaw-drop--two { left: 58%; top: 48%; animation: thawDrop 1.2s .6s ease-in infinite; }
+@keyframes thawDrop { 20% { opacity: .9; } to { opacity: 0; transform: translateY(28px) scale(.5); } }
+
 /* Focus */
 .focus-field { position: absolute; inset: 0 0 22px; }
 .focus-full { position: absolute; inset: 0; display: grid; place-items: center; z-index: 1; }
@@ -71,6 +93,10 @@
 
 /* Sequence */
 .seq-wrap { display: grid; justify-items: center; gap: var(--s3); padding: var(--s3); width: 100%; position: relative; z-index: 1; }
+.seq-progress { width: min(240px, 100%); display: grid; justify-items: center; gap: 7px; color: var(--cream); font-family: var(--font-num); font-size: 0.8125rem; font-weight: 800; letter-spacing: 0.06em; line-height: 1.2; }
+.seq-progress > span { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.seq-progress > i { display: block; width: 100%; height: 5px; border-radius: 99px; overflow: hidden; background: var(--bg-4); }
+.seq-progress > i b { display: block; width: var(--seq-progress, 0%); height: 100%; border-radius: inherit; background: var(--acid); box-shadow: 0 0 8px var(--acid-glow); transition: width 220ms var(--ease); }
 .seq-orb { --c: #3a382f; width: 120px; height: 120px; border-radius: 50%; display: grid; place-items: center; background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--c) 60%, white), var(--c) 65%); border: 3px solid rgba(255, 255, 255, 0.15); box-shadow: 0 0 30px color-mix(in srgb, var(--c) 60%, transparent); transition: background 200ms; }
 .seq-orb.beat { animation: orbBeat 500ms var(--spring); }
 @keyframes orbBeat { 0% { transform: scale(0.8); } 60% { transform: scale(1.08); } }

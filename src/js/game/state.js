@@ -43,6 +43,7 @@ import { COLOUR_RULES, HASH_RE, isLikelyDuplicate } from './colour.js';
 
 export const SCHEMA_VERSION = 2;
 export const DURATION_MS = 15 * 60 * 1000;
+export const CONVERSATION_REFLECTION_MS = 30_000;
 export const TOKENS_PER_REPAIR = 2;
 export const MAX_TOKENS = MISSIONS.length * TOKENS_PER_REPAIR;
 
@@ -250,6 +251,12 @@ export function reduce(state, action) {
     case 'COMPLETE_PHYSICAL': {
       const m = state.missions[action.id];
       if (!m || !isUnlocked(state, action.id) || !canPlay(state) || m.status !== MISSION.ACTIVE || m.physicalComplete) return state;
+      const phys = getMission(action.id).physical;
+      if (phys.kind === 'consent' && action.method !== 'ai-reflection') return state;
+      if (action.method === 'ai-reflection') {
+        const d = state.drafts[action.id] || {};
+        if (phys.kind !== 'consent' || !d.conversationReportedAt || !d.conversationReflectionStartedAt || now - d.conversationReflectionStartedAt < CONVERSATION_REFLECTION_MS || d.conversationReflectionResult?.passed !== true) return state;
+      }
       const patch = { physicalComplete: true, physicalAt: now, note: cleanNote(action.note) || m.note, physicalMethod: 'self', walk: null };
       if (action.method === 'tracked') {
         const t = state.tracks[action.id];
@@ -258,11 +265,14 @@ export function reduce(state, action) {
         patch.physicalMethod = t.source === 'simulator' ? 'simulator' : walkBasis(t);
         patch.walk = { distanceM: t.distanceM, activeMs: t.activeMs, movingMs: t.movingMs, steps: t.steps || 0 };
       }
-      const phys = getMission(action.id).physical;
       if (phys.kind === 'camera') {
         const h = state.hunts[action.id];
-        if (!h || h.items.length < phys.count) return state;
-        patch.physicalMethod = 'photo';
+        if (action.method === 'reported') {
+          patch.physicalMethod = 'self';
+        } else {
+          if (!h || h.items.length < phys.count) return state;
+          patch.physicalMethod = 'photo';
+        }
       } else if (phys.kind === 'walk' && action.method !== 'tracked' && action.method !== 'self') {
         return state;
       }
@@ -317,7 +327,7 @@ export function reduce(state, action) {
 
     case 'EPISODE_START': {
       const m = state.missions[action.id];
-      if (!m || !isUnlocked(state, action.id) || m.status !== MISSION.ACTIVE || getMission(action.id).digital.game !== 'episode') return state;
+      if (!m || !isUnlocked(state, action.id) || ![MISSION.ACTIVE, MISSION.REPAIRED].includes(m.status) || getMission(action.id).digital.game !== 'episode') return state;
       if (!EPISODES.some((e) => e.id === action.episodeId)) return state;
       return { ...state, episodes: { ...state.episodes, [action.id]: { episodeId: action.episodeId, messages: [] } } };
     }
@@ -332,7 +342,7 @@ export function reduce(state, action) {
     case 'EPISODE_SEND': {
       const m = state.missions[action.id];
       const e = state.episodes[action.id];
-      if (!m || !isUnlocked(state, action.id) || m.status !== MISSION.ACTIVE || !e || typeof action.text !== 'string') return state;
+      if (!m || !isUnlocked(state, action.id) || ![MISSION.ACTIVE, MISSION.REPAIRED].includes(m.status) || !e || typeof action.text !== 'string') return state;
       const text = action.text.trim();
       if (!text || text.length > MAX_CHARS || e.messages.length >= TURNS) return state;
       try {
@@ -423,6 +433,15 @@ export function sanitizeDraft(raw) {
   if (!raw || typeof raw !== 'object') return out;
   if (typeof raw.note === 'string') out.note = raw.note.slice(0, MAX_DRAFT);
   if (raw.consent === true) out.consent = true;
+  if (Number.isFinite(raw.conversationReportedAt) && raw.conversationReportedAt > 0) out.conversationReportedAt = raw.conversationReportedAt;
+  if (Number.isFinite(raw.conversationReflectionStartedAt) && raw.conversationReflectionStartedAt > 0) out.conversationReflectionStartedAt = raw.conversationReflectionStartedAt;
+  if (typeof raw.conversationReflection === 'string') out.conversationReflection = raw.conversationReflection.slice(0, MAX_DRAFT);
+  if (raw.conversationReflectionResult && typeof raw.conversationReflectionResult === 'object') {
+    const r = raw.conversationReflectionResult;
+    if (typeof r.passed === 'boolean' && Number.isInteger(r.score) && r.score >= 1 && r.score <= 5 && typeof r.feedback === 'string' && typeof r.suggestion === 'string' && Number.isFinite(r.evaluatedAt)) {
+      out.conversationReflectionResult = { passed: r.passed, score: r.score, feedback: r.feedback.slice(0, 160), suggestion: r.suggestion.slice(0, 160), evaluatedAt: r.evaluatedAt };
+    }
+  }
   if (typeof raw.timerStartedAt === 'number' && Number.isFinite(raw.timerStartedAt)) out.timerStartedAt = raw.timerStartedAt;
   if (Number.isInteger(raw.counted) && raw.counted >= 0 && raw.counted <= 10) out.counted = raw.counted;
   return out;

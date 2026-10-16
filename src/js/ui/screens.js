@@ -122,7 +122,7 @@ export function summaryScreen({ state, profile, runXp, runBadges }) {
       </div>
       <div class="stat-grid">
         <div class="stat"><b data-count="${pct}">${pct}%</b><small>restored</small></div>
-        <div class="stat"><b>${n}/5</b><small>repaired</small></div>
+        <div class="stat"><b>${n}/${MISSIONS.length}</b><small>repaired</small></div>
         <div class="stat"><b>${tokenCount(state)}/${MAX_TOKENS}</b><small>tokens</small></div>
         <div class="stat"><b data-count="${runXp}">+${runXp}</b><small>XP</small></div>
       </div>
@@ -141,6 +141,8 @@ export function summaryScreen({ state, profile, runXp, runBadges }) {
 export function locationSheet({ state, profile, destId, today }) {
   const dest = getDestination(destId);
   const mission = missionAtDestination(destId);
+  const daily = dailyFor(today);
+  const isDaily = !mission && daily.destinationId === destId;
   const running = state.session.status === SESSION.RUNNING;
   let body = '';
   if (mission) {
@@ -171,20 +173,20 @@ export function locationSheet({ state, profile, destId, today }) {
       <p class="eyebrow eyebrow--acid">Squad Rally · Local</p><h2 id="sheet-title">${esc(dest.name)}</h2>
       <p class="sheet-line">${esc(SQUAD_RALLY.line)}</p>
       ${open ? `<button class="btn btn--acid btn--xl btn--block" data-action="open-rally">${icon('play')} Play</button>` : '<p class="sheet-line">Repair 1 glitch to unlock.</p>'}`;
-  } else if (dailyFor(today).destinationId === destId) {
-    const d = dailyFor(today);
+  } else if (isDaily) {
+    const d = daily;
     const done = dailyDone(profile, today);
     body = `<div class="sheet-art">${icon('star', 'icon--xl')}</div>
       <p class="eyebrow eyebrow--acid">Daily challenge</p><h2 id="sheet-title">${esc(d.title)}</h2>
       <p class="sheet-line">${esc(d.line)}</p>
-      ${done ? `<p class="repaired-line">${icon('check')} Done today. Back tomorrow.</p>` : `<button class="btn btn--acid btn--xl btn--block" data-action="daily-done">${icon('check')} Done it · +${XP.daily} XP</button>`}`;
+      ${done ? `<p class="repaired-line daily-xp-earned">${icon('check')} +${XP.daily} XP earned today. Back tomorrow.</p>` : `<button class="btn btn--acid btn--xl btn--block" data-action="daily-done">${icon('check')} Done it · +${XP.daily} XP</button>`}`;
   } else {
     body = `<div class="sheet-art sheet-art--place">${icon('pin', 'icon--xl')}</div>
       <p class="eyebrow">${esc(dest.officialRef)}</p><h2 id="sheet-title">${esc(dest.name)}</h2>
       <p class="sheet-line">${esc(dest.blurb)}</p>`;
   }
   return `<div class="scrim" data-action="close-sheet"></div>
-    <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+    <section class="sheet${isDaily ? ' sheet--daily' : ''}" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
       <div class="sheet-grip" aria-hidden="true"></div>
       <button class="icon-btn sheet-close" data-action="close-sheet" aria-label="Close">${icon('close')}</button>
       <div class="sheet-body">${body}</div>

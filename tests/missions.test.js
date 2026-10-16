@@ -4,8 +4,10 @@ import { MISSIONS, validateMinigameResult, SQUAD_RALLY, DAILY } from '../src/js/
 import { DESTINATIONS, getDestination } from '../src/js/data/destinations.js';
 import { judgeStep, RHYTHM, makeSequence, checkSequence, SOCIAL, socialNext, SPOT, rallySequence } from '../src/js/game/minigames.js';
 
-test('the five documented glitches exist with exact names and both parts', () => {
-  assert.deepEqual(MISSIONS.map((m) => m.name), ['Frozen Character', 'Low Battery', 'Missing Connection', 'Lost Colour', 'Time Loop']);
+test('the three intended quests exist with their six activities', () => {
+  assert.deepEqual(MISSIONS.map((m) => m.name), ['Frozen Character', 'Lost Colour', 'Lost Connection']);
+  assert.deepEqual(MISSIONS.map((m) => m.physical.title), ['Walk and Thaw', 'Colour hunt', 'Real talk']);
+  assert.deepEqual(MISSIONS.map((m) => m.digital.game), ['thaw', 'sequence', 'episode']);
   for (const m of MISSIONS) {
     assert.ok(m.physical.line && m.physical.alt && m.physical.squad, `${m.id} physical`);
     assert.ok(m.digital.game && m.digital.line && m.digital.squad, `${m.id} digital`);
@@ -31,13 +33,19 @@ test('destinations sit inside the artwork and cite the official map, no GPS', ()
 });
 
 test('minigame results must actually be wins', () => {
-  assert.equal(validateMinigameResult('frozen-character', { hits: 7 }).ok, false);
-  assert.equal(validateMinigameResult('frozen-character', { hits: 8 }).ok, true);
-  assert.equal(validateMinigameResult('low-battery', { hits: 11 }).ok, false);
+  assert.equal(validateMinigameResult('frozen-character', { melted: 99 }).ok, false);
+  assert.equal(validateMinigameResult('frozen-character', { melted: 100 }).ok, true);
   assert.equal(validateMinigameResult('missing-connection', { connected: false, path: 1 }).ok, false);
   assert.equal(validateMinigameResult('lost-colour', { correct: false }).ok, false);
-  assert.equal(validateMinigameResult('time-loop', { found: 2 }).ok, false);
-  assert.deepEqual(validateMinigameResult('low-battery', { hits: 12, perfect: true }).value, { game: 'focus', perfect: true });
+  assert.equal(validateMinigameResult('lost-colour', { correct: false }).ok, false);
+  assert.deepEqual(validateMinigameResult('frozen-character', { melted: 100, perfect: true }).value, { game: 'thaw', perfect: true });
+});
+
+test('digital score records accept only scores consistent with each completed game', () => {
+  assert.equal(validateMinigameResult('frozen-character', { melted: 100, perfect: true, restarts: 0, score: 1000 }).value.score, 1000);
+  assert.equal(validateMinigameResult('frozen-character', { melted: 100, perfect: true, restarts: 0, score: 999 }).value.score, undefined);
+  assert.equal(validateMinigameResult('lost-colour', { correct: true, perfect: true, rounds: 3, mistakes: 0, rushes: 0, score: 300 }).value.score, 300);
+  assert.equal(validateMinigameResult('lost-colour', { correct: true, perfect: true, rounds: 3, mistakes: 1, rushes: 0, score: 300 }).value.score, undefined);
 });
 
 test('rhythm judging: on-beat correct side hits; off-beat or wrong side misses', () => {

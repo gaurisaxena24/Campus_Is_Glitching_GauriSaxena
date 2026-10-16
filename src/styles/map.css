@@ -26,14 +26,14 @@
 .zone { position: absolute; width: 150px; height: 150px; transform: translate(-50%, -62%); border-radius: 50%; }
 .zone--glitch {
   background:
-    repeating-linear-gradient(0deg, rgba(182, 230, 50, 0.16) 0 2px, transparent 2px 5px),
-    radial-gradient(circle, rgba(182, 230, 50, 0.28) 0%, rgba(182, 230, 50, 0.08) 45%, transparent 70%);
+    repeating-linear-gradient(0deg, color-mix(in srgb, var(--st-glitch) 16%, transparent) 0 2px, transparent 2px 5px),
+    radial-gradient(circle, color-mix(in srgb, var(--st-glitch) 28%, transparent) 0%, color-mix(in srgb, var(--st-glitch) 8%, transparent) 45%, transparent 70%);
   mix-blend-mode: screen;
   animation: zonePulse 2.6s ease-in-out infinite;
 }
-.zone--glitch::after { content: ''; position: absolute; inset: 20%; border: 1px solid rgba(182, 230, 50, 0.32); border-radius: 50%; animation: zoneSignal 3.4s ease-out infinite; }
+.zone--glitch::after { content: ''; position: absolute; inset: 20%; border: 1px solid color-mix(in srgb, var(--st-glitch) 32%, transparent); border-radius: 50%; animation: zoneSignal 3.4s ease-out infinite; }
 @keyframes zoneSignal { 0% { transform: scale(0.45); opacity: 0; } 25% { opacity: 0.55; } 100% { transform: scale(1.4); opacity: 0; } }
-.zone--glitch i { position: absolute; width: 10px; height: 10px; background: var(--acid); opacity: 0; box-shadow: 0 0 8px var(--acid); animation: pixel 3s steps(1, end) infinite; }
+.zone--glitch i { position: absolute; width: 10px; height: 10px; background: var(--st-glitch); opacity: 0; box-shadow: 0 0 8px var(--st-glitch); animation: pixel 3s steps(1, end) infinite; }
 .zone--glitch i:nth-child(1) { left: 20%; top: 30%; }
 .zone--glitch i:nth-child(2) { left: 70%; top: 50%; animation-delay: 1s; width: 14px; height: 6px; }
 .zone--glitch i:nth-child(3) { left: 40%; top: 75%; animation-delay: 2s; }
@@ -68,8 +68,8 @@
 .pin-ring { fill: none; stroke: transparent; stroke-width: 2.5; }
 .pin-glyph { fill: none; stroke-width: 2.1; stroke-linecap: round; stroke-linejoin: round; }
 
-.pin--AVAILABLE .pin-body { fill: var(--acid); }
-.pin--AVAILABLE .pin-glyph { stroke: #3d5200; }
+.pin--AVAILABLE .pin-body { fill: var(--st-glitch); }
+.pin--AVAILABLE .pin-glyph { stroke: #641b24; }
 .pin--ACTIVE .pin-body, .pin--PHYSICAL_COMPLETE .pin-body, .pin--DIGITAL_COMPLETE .pin-body { fill: var(--orange); }
 .pin--ACTIVE .pin-glyph, .pin--PHYSICAL_COMPLETE .pin-glyph, .pin--DIGITAL_COMPLETE .pin-glyph { stroke: #6b3410; }
 .pin--ACTIVE .pin-ring, .pin--PHYSICAL_COMPLETE .pin-ring, .pin--DIGITAL_COMPLETE .pin-ring { stroke: var(--orange); stroke-dasharray: 10 6; transform-origin: 20px 18.5px; animation: spinRing 2.4s linear infinite; }
@@ -95,6 +95,7 @@
 .marker.unlocked-now .pin-svg { animation: unlockPop 900ms var(--spring) both; }
 @keyframes unlockPop { 0% { transform: scale(0.3) rotate(-20deg); opacity: 0; } 60% { transform: scale(1.3); opacity: 1; filter: drop-shadow(0 0 16px var(--acid)); } 100% { transform: none; } }
 .marker.settled .pin-svg { animation: settle 1s var(--spring) both; }
+.marker.team-repaired .pin-svg { filter: drop-shadow(0 0 7px rgba(182, 230, 50, 0.55)); }
 @keyframes settle { 0% { transform: scale(1.5); filter: drop-shadow(0 0 20px rgba(210, 255, 87, 0.95)); } 100% { transform: none; } }
 .marker.is-done .pin-svg { opacity: 0.75; }
 
@@ -121,13 +122,14 @@
 .map-world.far .marker--place .plaque { display: none; }
 
 /* Map chrome */
-.map-telemetry { position: absolute; left: var(--space-3); top: var(--space-3); z-index: 6; display: grid; gap: var(--space-1); max-width: calc(100% - 66px); padding: var(--space-2) var(--space-3); border: 1px solid rgba(244, 236, 216, 0.18); border-radius: 10px; background: rgba(15, 14, 10, 0.86); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.32), inset 0 1px rgba(255, 255, 255, 0.04); font-family: var(--font-num); }
-.map-telemetry > span { color: var(--cream-2); font-size: 0.625rem; letter-spacing: 0.12em; font-weight: 700; }
-.map-telemetry > b { color: var(--cream-3); font-size: 0.5625rem; letter-spacing: 0.1em; }
+.map-telemetry { position: absolute; left: var(--space-3); top: var(--space-3); z-index: 6; display: grid; grid-template-columns: minmax(0, 1fr) 7px; grid-template-areas: "label dot" "progress progress"; align-items: center; column-gap: 10px; row-gap: var(--space-1); width: max-content; max-width: calc(100% - 66px); min-width: 0; box-sizing: border-box; padding: 10px 12px; border: 1px solid rgba(244, 236, 216, 0.18); border-radius: 10px; background: rgba(15, 14, 10, 0.86); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.32), inset 0 1px rgba(255, 255, 255, 0.04); font-family: var(--font-num); }
+.map-telemetry > span { grid-area: label; min-width: 0; color: var(--cream-2); font-size: 0.625rem; letter-spacing: 0.12em; font-weight: 700; white-space: nowrap; }
+.map-telemetry > b { grid-area: progress; display: flex; align-items: baseline; gap: 8px; color: var(--cream-3); font-size: 0.5625rem; letter-spacing: 0.1em; white-space: nowrap; }
 .map-telemetry strong { color: var(--acid); font-weight: 700; }
 .map-telemetry > i, .hud-signal i { width: 7px; height: 7px; border-radius: 50%; background: var(--acid); box-shadow: 0 0 9px var(--acid-glow); }
-.map-telemetry > i { position: absolute; top: 11px; right: 10px; }
+.map-telemetry > i { grid-area: dot; position: static; justify-self: end; }
 .map-telemetry[data-signal='active'] > i { background: var(--orange); box-shadow: 0 0 9px rgba(232, 134, 58, 0.7); }
+.map-telemetry[data-signal='glitching'] > i { background: var(--st-glitch); box-shadow: 0 0 9px color-mix(in srgb, var(--st-glitch) 70%, transparent); }
 .map-telemetry[data-signal='repair'] > i, .map-telemetry[data-signal='unlock'] > i { animation: telemetryFlash 360ms steps(2, end) 3; }
 @keyframes telemetryFlash { 50% { opacity: 0.25; } }
 .map-controls { position: absolute; right: var(--space-3); top: var(--space-3); z-index: 6; display: grid; gap: var(--space-2); }
@@ -145,6 +147,7 @@
 .quest-chip:active { transform: translate(-50%, 1px) scale(0.99); }
 @keyframes chipIn { from { opacity: 0; translate: 0 5px; } }
 .chip-icon { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: rgba(182, 230, 50, 0.16); color: var(--acid); }
+.chip-icon--AVAILABLE { background: color-mix(in srgb, var(--st-glitch) 18%, transparent); color: var(--st-glitch); }
 .chip-icon--ACTIVE, .chip-icon--PHYSICAL_COMPLETE, .chip-icon--DIGITAL_COMPLETE { background: rgba(232, 134, 58, 0.18); color: var(--orange); }
 .chip-text { display: grid; gap: 1px; min-width: 0; }
 .chip-text small { color: var(--cream-3); font-size: 0.6875rem; line-height: 1.2; }
@@ -170,7 +173,8 @@
 .list-row strong { display: block; font-size: var(--fs-sm); }
 .list-row small { font-size: var(--fs-xs); color: var(--cream-3); }
 .list-icon { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: var(--bg-3); color: var(--cream-3); }
-.list-icon--AVAILABLE, .list-icon--READY { color: var(--acid); background: rgba(182, 230, 50, 0.12); }
+.list-icon--AVAILABLE { color: var(--st-glitch); background: color-mix(in srgb, var(--st-glitch) 12%, transparent); }
+.list-icon--READY { color: var(--acid); background: rgba(182, 230, 50, 0.12); }
 .list-icon--ACTIVE, .list-icon--PHYSICAL_COMPLETE, .list-icon--DIGITAL_COMPLETE { color: var(--orange); }
 .list-icon--REPAIRED { color: var(--green); }
 .list-icon--DAILY { color: var(--gold); }

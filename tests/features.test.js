@@ -1,10 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createInitialState, reduce, MISSION } from '../src/js/game/state.js';
+import { createInitialState, reduce, MISSION, CONVERSATION_REFLECTION_MS } from '../src/js/game/state.js';
 import { MISSIONS } from '../src/js/data/missions.js';
 import { serialize, deserialize } from '../src/js/game/persistence.js';
 import { EPISODES } from '../src/js/game/conversation.js';
 import { WALK } from '../src/js/game/tracking.js';
+import { conversationReflectionPage } from '../src/js/ui/feature-pages.js';
 import { HASHES, EPISODE_LINES, finishPhysical, finishDigital } from './helpers.js';
 
 const T0 = 1_000_000;
@@ -27,6 +28,23 @@ const MC = 'missing-connection';
 const FC = 'frozen-character';
 const item = (hash, colourId, confidence = 0.8) => ({ hash, hex: '#2a5bd7', colourId, confidence });
 
+test('reflection CTA stays locked until 30 seconds and then reads Done Reflecting', () => {
+  const reflection = 'We talked about campus gardens, and I learned she grows mint.';
+  const ctx = (now) => ({
+    state: { drafts: { [MC]: { conversationReflectionStartedAt: T0, conversationReflection: reflection } } },
+    now,
+    ui: {},
+  });
+  const locked = conversationReflectionPage(ctx(T0 + CONVERSATION_REFLECTION_MS - 1), MC);
+  assert.match(locked, /Keep reflecting/);
+  assert.match(locked, /data-reflection-submit disabled/);
+  assert.doesNotMatch(locked, /Done Reflecting/);
+
+  const ready = conversationReflectionPage(ctx(T0 + CONVERSATION_REFLECTION_MS), MC);
+  assert.match(ready, /Done Reflecting/);
+  assert.doesNotMatch(ready, /data-reflection-submit disabled/);
+});
+
 test('colour hunt: target comes from mission config; failed matches, low confidence and duplicates give no progress', () => {
   let s = run(active(LC), { type: 'HUNT_INIT', id: LC });
   const target = s.hunts[LC].target;
@@ -45,7 +63,14 @@ test('colour hunt: target comes from mission config; failed matches, low confide
   assert.equal(s.hunts[LC].items.length, 1, 'init is idempotent');
 });
 
-test('colour hunt: physical completes only with 5 passed photos, and never completes the digital puzzle', () => {
+test('colour hunt can be honestly self-reported when camera access is unavailable', () => {
+  const s = run(active(LC), { type: 'COMPLETE_PHYSICAL', id: LC, method: 'reported' });
+  assert.equal(s.missions[LC].physicalComplete, true);
+  assert.equal(s.missions[LC].physicalMethod, 'self');
+  assert.equal(s.missions[LC].digitalComplete, false);
+});
+
+test('colour hunt camera checks still require five distinct passed photos', () => {
   let s = run(active(LC), { type: 'HUNT_INIT', id: LC });
   const target = s.hunts[LC].target;
   for (const h of HASHES.slice(0, 4)) s = run(s, { type: 'HUNT_ADD', id: LC, item: item(h, target) });
@@ -60,33 +85,9 @@ test('colour hunt: physical completes only with 5 passed photos, and never compl
   assert.ok(!JSON.stringify(s).includes('data:image'), 'no photo data in state');
 });
 
-test('pattern: round 2 locked until round 1; digital done only after both rounds; replays never change the record', () => {
-  let s = run(active(LC), { type: 'PATTERN_INIT', id: LC, seed: 42 });
-  const p = s.puzzles[LC];
-  assert.equal(run(s, { type: 'PATTERN_INIT', id: LC, seed: 9 }).puzzles[LC], p, 'init once');
-  assert.equal(run(s, { type: 'PATTERN_ATTEMPT', id: LC, round: 1, answer: p.rounds[1].solution }).puzzles[LC].solved[1], false, 'locked');
-  assert.equal(run(s, { type: 'SUBMIT_DIGITAL', id: LC }).missions[LC].digitalComplete, false);
-  const wrong = p.rounds[0].solution.map((t) => (t === 'rust' ? 'sky' : 'rust'));
-  s = run(s, { type: 'PATTERN_ATTEMPT', id: LC, round: 0, answer: wrong });
-  assert.deepEqual(s.puzzles[LC].attempts, [1, 0]);
-  assert.equal(s.puzzles[LC].solved[0], false);
-  s = run(s, { type: 'PATTERN_ATTEMPT', id: LC, round: 0, answer: p.rounds[0].solution });
-  const afterR1 = s;
-  s = run(s, { type: 'PATTERN_ATTEMPT', id: LC, round: 0, answer: p.rounds[0].solution });
-  assert.equal(s, afterR1, 'replaying a solved round is a no-op (rewards are keyed on this)');
-  s = run(s, { type: 'PATTERN_ATTEMPT', id: LC, round: 1, answer: p.rounds[1].solution });
-  s = run(s, { type: 'SUBMIT_DIGITAL', id: LC });
-  assert.equal(s.missions[LC].digitalComplete, true);
-  assert.equal(s.missions[LC].physicalComplete, false, 'digital never completes physical');
-  assert.equal(s.missions[LC].result.perfect, false, 'one wrong attempt');
-});
-
-test('pattern: a tampered saved puzzle is dropped on load', () => {
-  const s = run(active(LC), { type: 'PATTERN_INIT', id: LC, seed: 42 });
-  const raw = JSON.parse(serialize(s));
-  raw.puzzles[LC].rounds[0].solution[0] = raw.puzzles[LC].rounds[0].solution[0] === 'rust' ? 'sky' : 'rust';
-  assert.equal(deserialize(raw).puzzles[LC], undefined);
-  assert.deepEqual(deserialize(serialize(s)).puzzles[LC], s.puzzles[LC]);
+test('colour memory game accepts wins and rejects misses', () => {
+  assert.equal(reduce(active(LC), { type: 'SUBMIT_DIGITAL', id: LC, result: { correct: false } }).missions[LC].digitalComplete, false);
+  assert.equal(reduce(active(LC), { type: 'SUBMIT_DIGITAL', id: LC, result: { correct: true, perfect: true } }).missions[LC].digitalComplete, true);
 });
 
 test('episode: exactly five messages, replayed on load, then digital completes with a rank', () => {
@@ -106,6 +107,43 @@ test('episode: exactly five messages, replayed on load, then digital completes w
   const bad = JSON.parse(serialize(s));
   bad.episodes[MC].episodeId = 'made-up';
   assert.equal(deserialize(bad).episodes[MC], undefined, 'unknown episode dropped');
+});
+
+test('a repaired Lost Connection quest can replay its digital conversation without changing quest completion', () => {
+  let s = active(MC);
+  const episodeId = EPISODES[0].id;
+  s = run(s, { type: 'EPISODE_START', id: MC, episodeId });
+  const before = { ...s.missions[MC], status: 'REPAIRED', physicalComplete: true, digitalComplete: true };
+  s = { ...s, missions: { ...s.missions, [MC]: before } };
+  const restarted = reduce(s, { type: 'EPISODE_START', id: MC, episodeId, now: T0 + 20 });
+  assert.equal(restarted.episodes[MC].messages.length, 0);
+  const played = reduce(restarted, { type: 'EPISODE_SEND', id: MC, text: 'Hey, what are you working on?', now: T0 + 21 });
+  assert.equal(played.episodes[MC].messages.length, 1);
+  assert.equal(played.missions[MC].status, 'REPAIRED');
+  assert.equal(played.missions[MC].digitalComplete, true);
+  assert.deepEqual(played.missions[MC].result, before.result);
+});
+
+test('real conversation self-report is gated by 30 seconds and a passing AI reflection, then awards progress once', () => {
+  const startedAt = T0 + 100;
+  const direct = run(active(MC), { type: 'COMPLETE_PHYSICAL', id: MC, method: 'self' });
+  assert.equal(direct.missions[MC].physicalComplete, false, 'consent activities cannot bypass the reflection flow');
+  let s = run(active(MC), { type: 'SAVE_DRAFT', id: MC, draft: {
+    consent: true,
+    conversationReportedAt: startedAt,
+    conversationReflectionStartedAt: startedAt,
+    conversationReflection: 'We talked about the campus garden and I learned she grows mint.',
+    conversationReflectionResult: { passed: true, score: 4, feedback: 'Nice detail.', suggestion: 'Ask what is blooming next.', evaluatedAt: startedAt + CONVERSATION_REFLECTION_MS },
+  } });
+  const blocked = reduce(s, { type: 'COMPLETE_PHYSICAL', id: MC, method: 'ai-reflection', now: startedAt + CONVERSATION_REFLECTION_MS - 1 });
+  assert.equal(blocked.missions[MC].physicalComplete, false, 'one millisecond early is blocked');
+  s = reduce(s, { type: 'COMPLETE_PHYSICAL', id: MC, method: 'ai-reflection', now: startedAt + CONVERSATION_REFLECTION_MS });
+  assert.equal(s.missions[MC].physicalComplete, true);
+  assert.equal(s.missions[MC].physicalMethod, 'self', 'AI evaluates writing and does not verify the real event');
+  assert.equal(reduce(s, { type: 'COMPLETE_PHYSICAL', id: MC, method: 'ai-reflection', now: startedAt + CONVERSATION_REFLECTION_MS + 10 }), s, 'reward eligibility cannot be repeated');
+
+  const bare = run(active(MC), { type: 'SAVE_DRAFT', id: MC, draft: { conversationReflectionStartedAt: startedAt, conversationReflectionResult: { passed: true, score: 4, feedback: 'Good', suggestion: 'Ask more', evaluatedAt: startedAt } } });
+  assert.equal(reduce(bare, { type: 'COMPLETE_PHYSICAL', id: MC, method: 'ai-reflection', now: startedAt + CONVERSATION_REFLECTION_MS }).missions[MC].physicalComplete, false, 'missing self-report cannot complete');
 });
 
 test('walk: tracked completion needs the rule met; self-report is labelled self', () => {

@@ -99,22 +99,21 @@ test('celebration is pending exactly once', () => {
 test('locations unlock as glitches are repaired', () => {
   let s = started();
   assert.equal(isUnlocked(s, 'frozen-character'), true);
-  assert.equal(isUnlocked(s, 'low-battery'), false);
+  assert.equal(isUnlocked(s, 'lost-colour'), false);
   assert.equal(displayState(s, 'missing-connection'), 'LOCKED');
   assert.equal(reduce(s, { type: 'ACTIVATE', id: 'missing-connection', now: T0 + 1 }).missions['missing-connection'].status, MISSION.UNDISCOVERED);
   s = reduce(playBoth(s, fc), { type: 'REPAIR', id: fc, now: T0 + 4 });
-  assert.equal(isUnlocked(s, 'low-battery'), true);
+  assert.equal(isUnlocked(s, 'lost-colour'), true);
   assert.equal(isUnlocked(s, 'missing-connection'), false);
-  assert.equal(isUnlocked(s, 'lost-colour'), false);
   assert.equal(isUnlocked(reduce(s, { type: 'SET_UNLOCK_ALL', value: true }), 'missing-connection'), false);
-  s = reduce(playBoth(s, 'low-battery', T0 + 10), { type: 'REPAIR', id: 'low-battery', now: T0 + 15 });
+  s = reduce(playBoth(s, 'lost-colour', T0 + 10), { type: 'REPAIR', id: 'lost-colour', now: T0 + 15 });
   s = deserialize(serialize(s));
   assert.equal(isUnlocked(s, 'missing-connection'), true, 'unlock survives save/load');
-  assert.equal(isUnlocked(s, 'lost-colour'), false, 'third challenge remains locked');
-  assert.equal(reduce(s, { type: 'ACTIVATE', id: 'lost-colour', now: T0 + 20 }).missions['lost-colour'].status, MISSION.UNDISCOVERED);
+  assert.equal(isUnlocked(s, 'lost-colour'), true, 'second challenge remains unlocked');
+  assert.equal(reduce(s, { type: 'ACTIVATE', id: 'missing-connection', now: T0 + 20 }).missions['missing-connection'].status, MISSION.ACTIVE);
 });
 
-test('repairing all five gives 10 tokens, 100% and a victory (T-TOK-02, T-MIS-01..05)', () => {
+test('repairing all three gives six tokens, 100% and a victory', () => {
   let s = started();
   let t = T0;
   for (const id of MISSION_IDS) {
@@ -122,7 +121,7 @@ test('repairing all five gives 10 tokens, 100% and a victory (T-TOK-02, T-MIS-01
     s = reduce(s, { type: 'REPAIR', id, now: t + 5 });
     assert.equal(s.missions[id].status, MISSION.REPAIRED, id);
   }
-  assert.equal(repairedCount(s), 5);
+  assert.equal(repairedCount(s), 3);
   assert.equal(tokenCount(s), MAX_TOKENS);
   assert.equal(restorationPercent(s), 100);
   assert.equal(s.session.status, SESSION.ENDED);
@@ -131,7 +130,7 @@ test('repairing all five gives 10 tokens, 100% and a victory (T-TOK-02, T-MIS-01
 
 test('restoration percent counts parts and repairs', () => {
   let s = run(started(), { type: 'ACTIVATE', id: fc, now: T0 + 1 }, { type: 'COMPLETE_PHYSICAL', method: 'self', id: fc, now: T0 + 2 });
-  assert.equal(restorationPercent(s), 5);
+  assert.equal(restorationPercent(s), 8);
 });
 
 test('actions while paused are ignored', () => {

@@ -71,7 +71,8 @@ export function huntPage(ctx, id) {
     ${cam.busy ? '<p class="hint hint--center" role="status">Checking the colour…</p>' : ''}
     ${cam.error ? `<p class="walk-help walk-help--bad" role="alert">${icon('info', 'icon--sm')} ${esc(cam.error)}</p>` : ''}
     ${stage}
-    <p class="safety">${icon('leaf', 'icon--sm')} Don't photograph people without asking. ${esc(p.alt)} Nothing is uploaded.</p>
+    <button class="link-btn link-btn--light" data-action="report-colour-hunt" data-id="${id}">I did the colour hunt <small>(self-reported)</small></button>
+    <p class="safety">${icon('leaf', 'icon--sm')} Don't photograph people without asking. Camera checks are optional; photos stay on this phone.</p>
   </div>`;
 }
 
@@ -210,5 +211,48 @@ export function episodePage(ctx, id) {
     <p class="episode-scene">${esc(v.ep.intro)}</p>
     <div class="chat" aria-live="polite">${bubbles}${typing ? `<div class="bubble bubble--character bubble--typing" aria-label="${esc(v.ep.character.name)} is typing"><i></i><i></i><i></i></div>` : ''}</div>
     ${foot}
+  </div>`;
+}
+
+// Lost Connection physical activity: mandatory reflection timer, saved locally
+// while a server-only AI coach evaluates the player's own account of the chat.
+export function conversationReflectionPage(ctx, id) {
+  const { state, now, ui } = ctx;
+  const d = state.drafts[id] || {};
+  const result = d.conversationReflectionResult;
+  const started = d.conversationReflectionStartedAt || now;
+  const left = Math.max(0, 30_000 - (now - started));
+  const speechAvailable = typeof window !== 'undefined' && Boolean(window.SpeechRecognition || window.webkitSpeechRecognition);
+  const header = `<div class="mission-top">${back('Lost Connection')}<span class="engine-tag">Reflection coach · AI</span></div>`;
+  let content;
+  if (result) {
+    content = `<section class="reflection-result panel${result.passed ? ' is-pass' : ' is-retry'}" aria-live="polite">
+      <span class="reflection-result-mark" aria-hidden="true">${icon(result.passed ? 'check' : 'restart', 'icon--lg')}</span>
+      <p class="eyebrow eyebrow--acid">${result.passed ? 'Signal connected' : 'One more detail'}</p>
+      <h1 tabindex="-1">${result.score}/5 · ${result.passed ? 'Nice listening' : 'Keep going'}</h1>
+      <p>${esc(result.feedback)}</p><p class="reflection-suggestion"><strong>Try this:</strong> ${esc(result.suggestion)}</p>
+      <small>This rates your reflection; it cannot verify the conversation.</small>
+      ${result.passed
+        ? `<button class="btn btn--acid btn--xl btn--block" data-action="conversation-reflection-continue" data-id="${id}">${icon('next')} Continue quest</button>`
+        : `<button class="btn btn--acid btn--xl btn--block" data-action="conversation-reflection-again" data-id="${id}">${icon('restart')} Reflect again</button>`}
+    </section>`;
+  } else {
+    const loading = ui.reflectionLoading === id;
+    content = `<div class="reflection-scene" aria-hidden="true"><span class="reflection-bubble reflection-bubble--one">?</span><span class="reflection-bubble reflection-bubble--two">…</span><span class="reflection-link">${icon('squad', 'icon--lg')}</span></div>
+      <div class="reflection-clock" data-reflection-clock data-started="${started}" role="timer" aria-label="Reflection time remaining">
+        <span class="reflection-clock-face"><strong data-reflection-count>${left ? Math.ceil(left / 1000) : '✓'}</strong><small data-reflection-unit>${left ? 'sec' : 'ready'}</small></span>
+        <span class="reflection-clock-track"><i data-reflection-fill style="--elapsed:${Math.min(100, ((30_000 - left) / 30_000) * 100)}%"></i></span>
+        <p>${left ? 'Let the moment land…' : 'Ready when you are'}</p>
+      </div>
+      <label class="field"><span class="label">What made the conversation interesting?</span>
+        <textarea class="textarea" data-conversation-reflection maxlength="500" rows="3" placeholder="A topic, a good question, something you learned…">${esc(d.conversationReflection || '')}</textarea></label>
+      ${speechAvailable ? `<button class="link-btn link-btn--light" data-action="conversation-reflection-speak">${icon('sound')} Speak your reflection</button>` : ''}
+      <p class="hint reflection-privacy">Your writing goes to the AI coach for feedback. Skip names and private details. It does not prove the chat happened.</p>
+      ${ui.reflectionError ? `<p class="walk-help walk-help--bad" role="alert">${esc(ui.reflectionError)}</p><button class="btn btn--ghost-dark btn--block" data-action="conversation-reflection-submit" data-id="${id}">${icon('restart')} Retry evaluation</button>` : ''}
+      ${!ui.reflectionError ? `<button class="btn btn--acid btn--xl btn--block" data-action="conversation-reflection-submit" data-id="${id}" data-reflection-submit ${loading || left > 0 || (d.conversationReflection || '').trim().length < 12 ? 'disabled' : ''}>${loading ? 'Checking your reflection…' : left > 0 ? 'Keep reflecting' : `${icon('bolt')} Done Reflecting`}</button>` : ''}
+      <p class="reflection-honesty">We take your word that you spoke with someone; the coach only reads this reflection.</p>`;
+  }
+  return `<div class="page-inner page-inner--conversation-reflection">${header}
+    <section class="reflection-card">${result ? content : `<p class="eyebrow eyebrow--acid">30-second reflection</p><h1 tabindex="-1">Replay the good bit</h1>${content}`}</section>
   </div>`;
 }

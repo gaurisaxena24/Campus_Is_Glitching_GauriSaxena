@@ -3,11 +3,11 @@
 // Pure functions. Dates are local calendar days as 'YYYY-MM-DD' strings.
 //
 // XP is awarded through idempotent keys, so the same event (for example
-// "repair of Low Battery in session X") can never pay out twice, even after
+// "repair of a glitch in session X") can never pay out twice, even after
 // reloads, double taps or navigation. Repair tokens are separate and still
 // follow the documented rule: exactly 2 per repaired glitch.
 
-import { DAILY } from '../data/missions.js';
+import { DAILY, MISSIONS } from '../data/missions.js';
 
 export const PROFILE_VERSION = 1;
 export const XP_PER_LEVEL = 150;
@@ -22,6 +22,13 @@ export const XP = Object.freeze({
   daily: 30,
   rally: 40,
   victory: 100,
+  personalBest: 25,
+});
+
+export const GAME_RECORDS = Object.freeze({
+  thaw: { title: 'Frozen Character · Thaw', maxScore: 1000 },
+  sequence: { title: 'Lost Colour · Colour Pattern', maxScore: 300 },
+  episode: { title: 'Lost Connection · Conversation', maxScore: 15 },
 });
 
 export const AVATARS = [
@@ -47,15 +54,18 @@ export const SQUAD_COLOURS = ['#b6e632', '#e8a33d', '#5fb3c8', '#c58fd9', '#d973
 
 export const BADGES = [
   { id: 'first-repair', name: 'First Fix', desc: 'Repair your first glitch.', icon: 'seal' },
-  { id: 'restored', name: 'Campus Restored', desc: 'Repair all five glitches in one session.', icon: 'compass' },
-  { id: 'focus-perfect', name: 'Unplugged', desc: 'Recharge the library without tapping a notification.', icon: 'signal' },
-  { id: 'rhythm-perfect', name: 'In Step', desc: 'Thaw the runner without a missed step.', icon: 'steps' },
-  { id: 'patient', name: 'Slow Lane', desc: 'Restore the colours without rushing once.', icon: 'leaf' },
-  { id: 'listener', name: 'Good Listener', desc: 'Reconnect the Mess.', icon: 'squad' },
+  { id: 'restored', name: 'Campus Restored', desc: 'Repair all three glitches in one session.', icon: 'compass' },
+  { id: 'focus-perfect', name: 'Ice Breaker', desc: 'Thaw the frozen character in one clean run.', icon: 'signal' },
+  { id: 'rhythm-perfect', name: 'Colour Echo', desc: 'Clear every colour sequence without a miss.', icon: 'steps' },
+  { id: 'patient', name: 'Pattern Pro', desc: 'Restore colour with a perfect pattern run.', icon: 'leaf' },
+  { id: 'listener', name: 'Good Listener', desc: 'Reconnect through a thoughtful conversation.', icon: 'squad' },
   { id: 'squad-up', name: 'Squad Up', desc: 'Form a local squad.', icon: 'squad' },
   { id: 'rally', name: 'Chorus', desc: 'Win the Squad Rally.', icon: 'sound' },
   { id: 'daily', name: 'Daily Explorer', desc: 'Complete a daily challenge.', icon: 'flag' },
   { id: 'streak-3', name: 'Three in a Row', desc: 'Play on three days in a row.', icon: 'hourglass' },
+  { id: 'colour-hunter', name: 'Colour Hunter', desc: 'Complete the Lost Colour hunt.', icon: 'camera' },
+  { id: 'pattern-master', name: 'Pattern Master', desc: 'Score 280 or more in the colour pattern game.', icon: 'steps' },
+  { id: 'personal-best', name: 'Personal Best', desc: 'Set a new digital-game record.', icon: 'star' },
 ];
 
 export function createProfile() {
@@ -64,6 +74,7 @@ export function createProfile() {
     xp: 0,
     ledger: {},
     badges: {},
+    gameRecords: {},
     days: [],
     dailies: {},
     avatar: null,
@@ -71,6 +82,29 @@ export function createProfile() {
     tutorialSeen: false,
     squad: { name: '', colour: SQUAD_COLOURS[0], members: [], emails: [], mode: 'solo', rallyBest: 0, xp: 0 },
   };
+}
+
+// Persist only scores from the game's bounded, validated score scales.
+export function recordGameScore(p, game, score) {
+  const config = GAME_RECORDS[game];
+  if (!config || !Number.isInteger(score) || score < 0 || score > config.maxScore) {
+    return { profile: p, newBest: false, previousBest: null, best: p.gameRecords?.[game]?.best || 0 };
+  }
+  const old = p.gameRecords?.[game] || { best: 0, runs: [] };
+  const newBest = score > old.best;
+  const runs = [...old.runs, score].slice(-20);
+  return {
+    profile: { ...p, gameRecords: { ...p.gameRecords, [game]: { best: Math.max(old.best, score), runs } } },
+    newBest,
+    previousBest: old.best || null,
+    best: Math.max(old.best, score),
+  };
+}
+
+export function completedGlitchCount(p) {
+  return Object.keys(p.ledger || {}).filter((key) =>
+    MISSIONS.some((mission) => key.endsWith(`:${mission.id}:repair`))
+  ).length;
 }
 
 export function levelOf(xp) {
@@ -159,7 +193,7 @@ export function setSquad(p, patch) {
   // Accept any domain (Gmail, Outlook, school/org domains, and newer TLDs).
   // Validate only the basic address shape; the mail provider gives final feedback.
   squad.emails = [...new Set((Array.isArray(squad.emails) ? squad.emails : []).map((email) => String(email).trim().toLowerCase()).filter((email) => /^[^\s@]+@[^\s@]+$/.test(email)))].slice(0, 10);
-  squad.mode = squad.mode === 'squad' && squad.name ? 'squad' : 'solo';
+  squad.mode = squad.mode === 'squad' && squad.name && squad.members.length ? 'squad' : 'solo';
   squad.xp = Number.isInteger(squad.xp) && squad.xp >= 0 ? squad.xp : 0;
   squad.rallyBest = Number.isInteger(squad.rallyBest) && squad.rallyBest >= 0 ? Math.min(squad.rallyBest, 4) : 0;
   return { ...p, squad };
@@ -177,6 +211,15 @@ export function sanitizeProfile(raw) {
   if (raw.ledger && typeof raw.ledger === 'object') for (const k of Object.keys(raw.ledger).slice(0, 500)) if (raw.ledger[k] === true) ledger[k] = true;
   const badges = {};
   if (raw.badges && typeof raw.badges === 'object') for (const b of BADGES) if (typeof raw.badges[b.id] === 'string') badges[b.id] = raw.badges[b.id];
+  const gameRecords = {};
+  if (raw.gameRecords && typeof raw.gameRecords === 'object') {
+    for (const [game, config] of Object.entries(GAME_RECORDS)) {
+      const record = raw.gameRecords[game];
+      if (!record || typeof record !== 'object' || !Array.isArray(record.runs)) continue;
+      const runs = record.runs.filter((score) => Number.isInteger(score) && score >= 0 && score <= config.maxScore).slice(-20);
+      if (runs.length) gameRecords[game] = { best: Math.max(...runs), runs };
+    }
+  }
   const dailies = {};
   if (raw.dailies && typeof raw.dailies === 'object') for (const [d, id] of Object.entries(raw.dailies)) if (/^\d{4}-\d{2}-\d{2}$/.test(d) && typeof id === 'string') dailies[d] = id;
   const p = {
@@ -184,6 +227,7 @@ export function sanitizeProfile(raw) {
     xp: Number.isInteger(raw.xp) && raw.xp >= 0 ? raw.xp : 0,
     ledger,
     badges,
+    gameRecords,
     days,
     dailies,
     avatar: AVATARS.some((a) => a.id === raw.avatar) ? raw.avatar : null,
