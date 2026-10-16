@@ -127,7 +127,7 @@ export function summaryScreen({ state, profile, runXp, runBadges }) {
         <div class="stat"><b>${tokenCount(state)}/${MAX_TOKENS}</b><small>tokens</small></div>
         <div class="stat"><b data-count="${runXp}">+${runXp}</b><small>XP</small></div>
       </div>
-      ${badges.length ? `<section class="panel"><h2 class="section-title">New badges</h2><div class="badges">${badges.map((b) => `<div class="badge-tile on"><span>${icon(b.icon)}</span><strong>${esc(b.name)}</strong><small>${esc(b.desc)}</small></div>`).join('')}</div></section>` : ''}
+      ${badges.length ? `<section class="panel"><h2 class="section-title">New badges</h2><div class="badges">${badges.map((b) => `<div class="badge-tile on"><span>${icon(b.icon)}</span><div class="badge-tile-copy"><strong>${esc(b.name)}</strong><small>${esc(b.desc)}</small></div></div>`).join('')}</div></section>` : ''}
       ${notes ? `<details class="more more--dark" open><summary>${icon('quill', 'icon--sm')} Quest Journal notes</summary><ul>${notes}</ul></details>` : ''}
       <div class="btn-row btn-row--stack">
         <button class="btn btn--acid btn--xl btn--block" data-action="play-again">${icon('restart')} Play again</button>
