@@ -108,7 +108,7 @@ export function missionPage(ctx, id) {
   if (repaired) {
     cta = `<p class="repaired-line">${icon('seal')} Repaired. +${TOKENS_PER_REPAIR} tokens earned.</p>`;
   } else if (!started) {
-    cta = `<button class="btn btn--acid btn--xl btn--block" data-action="activate" data-id="${id}" ${running ? '' : 'aria-disabled="true"'}>${icon('play')} Start Challenge</button>`;
+    cta = `<button class="btn btn--acid btn--start-challenge btn--xl btn--block" data-action="activate" data-id="${id}" ${running ? '' : 'aria-disabled="true"'}>${icon('play')} Start Challenge</button>`;
   } else {
     cta = `<button class="btn btn--repair btn--xl btn--block${ready ? ' is-ready' : ''}" data-action="repair" data-id="${id}" aria-disabled="${ready ? 'false' : 'true'}">${icon('wrench')} Repair glitch</button>
       <p class="repair-hint">${ready ? 'Both parts done. Repair it!' : 'Complete both parts to repair.'}</p>`;

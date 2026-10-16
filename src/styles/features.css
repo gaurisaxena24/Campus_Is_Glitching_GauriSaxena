@@ -197,6 +197,8 @@
 .reflection-clock p { margin: 0; color: var(--cream-3); font-size: var(--fs-xs); }
 .reflection-card .field { width: 100%; text-align: left; }
 .reflection-card .textarea { min-height: 94px; resize: vertical; }
+.reflection-speak { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2); }
+.reflection-speak .icon { flex: none; }
 .reflection-privacy, .reflection-honesty { max-width: 440px; margin: 0; font-size: var(--fs-xs); }
 .reflection-honesty { color: var(--cream-3); }
 .reflection-card .btn { width: 100%; max-width: 440px; }

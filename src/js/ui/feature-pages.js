@@ -246,10 +246,10 @@ export function conversationReflectionPage(ctx, id) {
       </div>
       <label class="field"><span class="label">What made the conversation interesting?</span>
         <textarea class="textarea" data-conversation-reflection maxlength="500" rows="3" placeholder="A topic, a good question, something you learned…">${esc(d.conversationReflection || '')}</textarea></label>
-      ${speechAvailable ? `<button class="link-btn link-btn--light" data-action="conversation-reflection-speak">${icon('sound')} Speak your reflection</button>` : ''}
+      ${speechAvailable ? `<button class="link-btn link-btn--light reflection-speak" data-action="conversation-reflection-speak">${icon('sound')}<span>Speak your reflection</span></button>` : ''}
       <p class="hint reflection-privacy">Your writing goes to the AI coach for feedback. Skip names and private details. It does not prove the chat happened.</p>
       ${ui.reflectionError ? `<p class="walk-help walk-help--bad" role="alert">${esc(ui.reflectionError)}</p><button class="btn btn--ghost-dark btn--block" data-action="conversation-reflection-submit" data-id="${id}">${icon('restart')} Retry evaluation</button>` : ''}
-      ${!ui.reflectionError ? `<button class="btn btn--acid btn--xl btn--block" data-action="conversation-reflection-submit" data-id="${id}" data-reflection-submit ${loading || left > 0 || (d.conversationReflection || '').trim().length < 12 ? 'disabled' : ''}>${loading ? 'Checking your reflection…' : left > 0 ? 'Keep reflecting' : `${icon('bolt')} Done Reflecting`}</button>` : ''}
+      ${!ui.reflectionError ? `<button class="btn btn--acid btn--xl btn--block" data-action="conversation-reflection-submit" data-id="${id}" data-reflection-submit ${loading || left > 0 || (d.conversationReflection || '').trim().length < 12 ? 'disabled' : ''}>${loading ? 'Checking your reflection…' : `${icon('bolt')} Keep reflecting`}</button>` : ''}
       <p class="reflection-honesty">We take your word that you spoke with someone; the coach only reads this reflection.</p>`;
   }
   return `<div class="page-inner page-inner--conversation-reflection">${header}

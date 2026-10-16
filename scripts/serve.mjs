@@ -81,7 +81,7 @@ createServer(async (req, res) => {
       };
       let evaluation;
       const primaryModel = process.env.GEMINI_REFLECTION_MODEL || 'gemini-3.8-flash';
-      const models = [...new Set([primaryModel, 'gemini-3.6-flash'])];
+      const models = [...new Set([primaryModel, 'gemini-3.6-flash', 'gemini-3.5-flash-lite'])];
       let providerStatus = 0;
       let networkError = false;
       const validEvaluation = (value) => value && typeof value.plausible === 'boolean' && typeof value.engaged === 'boolean' && typeof value.curiosityOrListening === 'boolean' && typeof value.learnedSomething === 'boolean' && Number.isInteger(value.score) && value.score >= 1 && value.score <= 5 && typeof value.feedback === 'string' && typeof value.suggestion === 'string';

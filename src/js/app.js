@@ -1142,6 +1142,8 @@ export function startApp(root) {
       if (ui.page?.type !== 'mission' || ui.page.id !== id || !isUnlocked(state, id)) return refuse('Open an available challenge before starting it.', t);
       if (state.session.status !== SESSION.RUNNING) return refuse(state.session.status === SESSION.PAUSED ? 'Resume the session first.' : 'Start a session first.', t);
       if (dispatch({ type: 'ACTIVATE', id })) {
+        t.classList.add('is-pressed');
+        t.setAttribute('aria-pressed', 'true');
         play('start');
         toast('Challenge accepted', 'play');
       }
